@@ -2,7 +2,8 @@ import { Module, Global } from '@nestjs/common';
 import { LoggingService } from './services/logging.service';
 import { ContextService } from './services/context.service';
 import { FileLogger } from './infrastructure/file/file.logger';
-import { Logger } from './core/domain/logger.interface';
+import { MongoLogger } from './infrastructure/mongodb/mongo.logger';
+import { MongoConnectionService } from './infrastructure/mongodb/mongo-connection.service';
 
 /**
  * LoggingModule - NestJS module for the logging library.
@@ -18,12 +19,14 @@ import { Logger } from './core/domain/logger.interface';
   providers: [
     ContextService,
     LoggingService,
+    MongoConnectionService,
     {
       provide: 'LOGGER',
-      useClass: FileLogger,
+      useClass: MongoLogger,
     },
-    // Also provide FileLogger directly for cases where it's needed
+    // Keep both available if needed directly
     FileLogger,
+    MongoLogger,
   ],
   exports: [LoggingService, ContextService],
 })

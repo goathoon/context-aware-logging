@@ -1,0 +1,18 @@
+services:
+  atlas_local:
+    build:
+      context: ./mongo
+      dockerfile: Dockerfile
+    hostname: atlas_local
+    ports:
+      - 27016:27017
+    environment:
+      - MONGODB_INITDB_ROOT_USERNAME=admin
+      - MONGODB_INITDB_ROOT_PASSWORD=admin
+    volumes:
+      - data:/data/db
+      - config:/data/configdb
+
+volumes:
+  data:
+  config:
