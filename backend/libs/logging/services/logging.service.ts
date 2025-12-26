@@ -1,7 +1,7 @@
 import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
-import { Logger } from '../core/domain/logger.interface';
+import { LoggerPort } from '../core/port/out/logger.port';
 import { WideEvent } from '../core/domain/wide-event';
-import { LoggingContext } from '../core/domain/context.interface';
+import { LoggingContext } from '../core/domain/context';
 import { ContextService } from './context.service';
 
 /**
@@ -12,7 +12,7 @@ import { ContextService } from './context.service';
 export class LoggingService implements OnModuleDestroy {
   constructor(
     private readonly contextService: ContextService,
-    @Inject('LOGGER') private readonly logger: Logger,
+    private readonly logger: LoggerPort,
   ) {}
 
   /**
@@ -85,22 +85,22 @@ export class LoggingService implements OnModuleDestroy {
     this.finalizedRequestIds.add(context.requestId);
 
     // Clean up old request IDs to prevent memory leak
-    // Keep only recent 1000 request IDs
     if (this.finalizedRequestIds.size > 1000) {
       const idsToRemove = Array.from(this.finalizedRequestIds).slice(0, 100);
       idsToRemove.forEach((id) => this.finalizedRequestIds.delete(id));
     }
 
-    const event: WideEvent = {
+    // Create a validated WideEvent instance
+    const event = new WideEvent({
       requestId: context.requestId,
       timestamp: context.timestamp,
       service: context.service,
       route: context.route,
-      user: context.user,
-      error: context.error,
+      user: context.user as any,
+      error: context.error as any,
       performance: context.performance,
       metadata: context.metadata,
-    };
+    });
 
     await this.logger.log(event);
   }

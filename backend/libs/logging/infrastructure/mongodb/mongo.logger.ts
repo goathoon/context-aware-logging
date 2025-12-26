@@ -1,17 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { Logger } from '../../core/domain/logger.interface';
+import { Injectable, Logger } from '@nestjs/common';
+import { LoggerPort } from '../../core/port/out/logger.port';
 import { WideEvent } from '../../core/domain/wide-event';
-import { MongoConnectionService } from './mongo-connection.service';
+import { MongoConnectionClient } from './mongo.client';
 
 /**
- * MongoLogger - Infrastructure layer implementation of Logger interface.
+ * MongoLogger - Infrastructure layer implementation of LoggerPort.
  * Persists Wide Events to a MongoDB Time-series collection.
  */
 @Injectable()
-export class MongoLogger implements Logger {
+export class MongoLogger extends LoggerPort {
+  private readonly internalLogger = new Logger(MongoLogger.name);
   private readonly collectionName = 'wide_events';
 
-  constructor(private readonly mongoConnection: MongoConnectionService) {}
+  constructor(private readonly mongoConnectionClient: MongoConnectionClient) {
+    super();
+  }
 
   /**
    * Log a Wide Event to MongoDB.
@@ -19,21 +22,22 @@ export class MongoLogger implements Logger {
    */
   async log(event: WideEvent): Promise<void> {
     try {
-      const collection = this.mongoConnection.getCollection(this.collectionName);
-
-      // Convert timestamp to Date object for MongoDB Time-series optimization
+      // Convert WideEvent to MongoDB Document
+      // Note: In Phase 2, we convert the ISO string timestamp to a Date object
+      // to leverage MongoDB's native Time-series optimizations.
       const document = {
         ...event,
         timestamp: new Date(event.timestamp),
       };
 
-      // Always create/insert only
-      await collection.insertOne(document);
+      await this.mongoConnectionClient
+        .getCollection(this.collectionName)
+        .insertOne(document);
     } catch (error) {
-      // Logging failures should not break the application
-      // In production, consider a fallback mechanism
-      console.error('Failed to log to MongoDB:', error);
+      // Logging failures should not break the application (Non-blocking principle)
+      this.internalLogger.error(
+        `Failed to persist log to MongoDB: ${error.message}`,
+      );
     }
   }
 }
-

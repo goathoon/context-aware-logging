@@ -101,3 +101,59 @@ db.wide_events.aggregate([
 2. Logs are automatically deleted after the TTL period.
 3. Complex queries (like P95 latency) return results in sub-second time.
 4. MongoDB schema validation prevents malformed logs from being stored.
+
+## Sequence Diagram: Phase 2 Request Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant LoggingInterceptor
+    participant LoggingService
+    participant ContextService
+    participant AsyncLocalStorage
+    participant AppController
+    participant AppService
+    participant MongoLogger
+    participant MongoDB
+
+    Note over Client,MongoDB: Request Lifecycle with Mongo Persistence
+
+    Client->>LoggingInterceptor: HTTP Request
+    LoggingInterceptor->>LoggingInterceptor: Generate requestId (UUID)
+    LoggingInterceptor->>LoggingService: initializeContext(requestId, service, route)
+
+    Note over LoggingService: Creates LoggingContext (mutable)
+
+    LoggingInterceptor->>ContextService: run(loggingContext, handler)
+    ContextService->>AsyncLocalStorage: Store LoggingContext
+
+    Note over AppController,AppService: Request Processing & Context Enrichment
+
+    ContextService->>AppController: Execute handler()
+    AppController->>LoggingService: addUserContext(user)
+    AppController->>AppService: execute business logic
+    AppService-->>AppController: result
+    AppController-->>ContextService: Response
+
+    Note over LoggingInterceptor: Request Finalization
+
+    LoggingInterceptor->>LoggingService: addPerformance({durationMs})
+    LoggingInterceptor->>LoggingService: finalize()
+
+    Note over LoggingService: LoggingContext to WideEvent Class Conversion
+    Note over LoggingService: Validation & Runtime Type Check
+
+    LoggingService->>MongoLogger: log(wideEvent: WideEvent)
+
+    Note over MongoLogger: 1. Convert timestamp string to Date Object
+    Note over MongoLogger: 2. Access shared MongoConnectionClient
+
+    MongoLogger->>MongoDB: insertOne(document)
+    MongoDB-->>MongoLogger: Success (Write Acknowledged)
+    MongoLogger-->>LoggingService: Promise resolved
+
+    LoggingService-->>LoggingInterceptor: Finalization complete
+    LoggingInterceptor-->>Client: HTTP Response
+
+    Note over Client,MongoDB: One Request to One Wide Event Document (Time-series)
+```

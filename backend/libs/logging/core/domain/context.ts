@@ -4,14 +4,14 @@
  *
  * Can be extended with additional fields for specific domain requirements.
  */
-export interface LoggingContext {
+export class LoggingContext {
   requestId: string;
-  timestamp: string;
-  service: string;
-  route: string;
-  user?: { id: string; role: string };
-  error?: { code: string; message: string };
-  performance?: { durationMs: number };
+  public timestamp: string;
+  public service: string;
+  public route: string;
+  public user?: { id: string; role: string };
+  public error?: { code: string; message: string };
+  public performance?: { durationMs: number };
   // Allow for domain-specific metadata
-  metadata?: Record<string, any>;
+  public metadata?: Record<string, any>;
 }

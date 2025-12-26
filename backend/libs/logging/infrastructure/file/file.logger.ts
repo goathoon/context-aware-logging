@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { Logger } from '../../core/domain/logger.interface';
+import { LoggerPort } from '../../core/port/out/logger.port';
 import { WideEvent } from '../../core/domain/wide-event';
 
 /**
@@ -10,11 +10,15 @@ import { WideEvent } from '../../core/domain/wide-event';
  * No business logic, no context construction - pure I/O.
  */
 @Injectable()
-export class FileLogger implements Logger, OnModuleInit, OnModuleDestroy {
+export class FileLogger
+  extends LoggerPort
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logFilePath: string;
   private logFileHandle: fs.FileHandle | null = null;
 
   constructor() {
+    super();
     // Default to logs/app.log in the project root
     // Can be overridden via LOG_FILE_PATH environment variable
     this.logFilePath =

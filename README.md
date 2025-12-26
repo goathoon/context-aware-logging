@@ -40,13 +40,13 @@ This project explores a different approach:
 
 ## 🧭 Project Phases
 
-| Phase   | Description                                                         |
-| ------- | ------------------------------------------------------------------- |
-| Phase 1 | Context-aware logging with NestJS & OpenTelemetry (local JSON logs) |
-| Phase 2 | Persisting logs as queryable assets in MongoDB                      |
-| Phase 3 | RAG-based semantic storage of summarized log events                 |
-| Phase 4 | RAG-powered log search & analysis system                            |
-| Phase 5 | System hardening: MQ, caching, sampling, scalability                |
+| Phase   | Description                                          |
+| ------- | ---------------------------------------------------- |
+| Phase 1 | Context-aware logging with NestJS & local JSON logs  |
+| Phase 2 | Persisting logs as queryable assets in MongoDB       |
+| Phase 3 | RAG-based semantic storage of summarized log events  |
+| Phase 4 | RAG-powered log search & analysis system             |
+| Phase 5 | System hardening: MQ, caching, sampling, scalability |
 
 Each phase is fully documented and designed to stand alone.
 
@@ -55,7 +55,7 @@ Each phase is fully documented and designed to stand alone.
 ## 🧱 Tech Stack
 
 - **Backend**: NestJS, TypeScript
-- **Observability**: OpenTelemetry
+- **Observability**: Custom Context
 - **Storage**: MongoDB, Vector DB
 - **AI / RAG**: LLM + Embeddings
 - **Infra (local, Phase 2 ~ 5)**: Docker Compose
