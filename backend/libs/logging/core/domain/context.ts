@@ -13,5 +13,11 @@ export class LoggingContext {
   public error?: { code: string; message: string };
   public performance?: { durationMs: number };
   // Allow for domain-specific metadata
-  public metadata?: Record<string, any>;
+  public _metadata: Record<string, any> = {};
+
+  /**
+   * Internal processing fields for Phase 3+ (RAG/Embeddings)
+   * These are part of the working context but not the core WideEvent domain model.
+   */
+  _summary?: string;
 }

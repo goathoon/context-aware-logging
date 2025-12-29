@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LoggerPort } from '../../core/port/out/logger.port';
 import { WideEvent } from '../../core/domain/wide-event';
 import { MongoConnectionClient } from './mongo.client';
+import { LoggingContext } from '../../core/domain/context';
 
 /**
  * MongoLogger - Infrastructure layer implementation of LoggerPort.
@@ -20,7 +21,11 @@ export class MongoLogger extends LoggerPort {
    * Log a Wide Event to MongoDB.
    * Converts timestamp string to Date object for Time-series optimization.
    */
-  async log(event: WideEvent): Promise<void> {
+  async log(
+    event: WideEvent,
+    _metadata: LoggingContext['_metadata'] | undefined,
+    _summary: string,
+  ): Promise<void> {
     try {
       // Convert WideEvent to MongoDB Document
       // Note: In Phase 2, we convert the ISO string timestamp to a Date object
@@ -28,6 +33,7 @@ export class MongoLogger extends LoggerPort {
       const document = {
         ...event,
         timestamp: new Date(event.timestamp),
+        _summary: _summary,
       };
 
       await this.mongoConnectionClient

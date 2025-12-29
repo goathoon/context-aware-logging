@@ -13,11 +13,10 @@ Phase 2의 핵심 목표는 로그를 단순한 텍스트 파일이 아닌 **"�
 - **운영 효율성**: TTL(Time-To-Live) 전략을 통한 자동 데이터 수명 주기 관리.
 - **비용 및 성능을 고려한 로그 선별**: 모든 로그를 저장하는 비효율을 줄이고, 비즈니스 가치가 높은 로그(Error, Premium 유저 등)를 선별하여 수집하는 전략의 초석 마련.
 
-## 3. 핵심 판단 및 결정 (Key Decisions & Rationale)
+## 3. 주요 결정 및 근거 (Key Decisions & Rationale)
 
 - **Time-series vs Normal Collection**: 로그 분석 성능과 저장 공간 압축률을 고려해 Time-series 컬렉션 선택.
 - **Interface vs Class (Contract-First)**: 단순히 타입만 정의하는 Interface에서 런타임 검증이 가능한 Class로 `WideEvent`를 승격. 이는 로그를 "데이터"이자 후속 분석 엔진과의 **"데이터 규약(Contract)"**으로 취급하겠다는 관점을 반영했습니다.
-- **Symbol 기반 Injection Token**: 문자열 기반 토큰의 취약성을 제거하기 위해 Symbol(`LOGGER_PORT`) 대신 추상 클래스 자체를 토큰으로 사용하는 방향으로 정립하여 타입 안정성 확보.
 - **Connection Lifecycle**: 어플리케이션 초기화 단계에서 연결을 완료하고 어댑터들이 이를 구독하는 싱글톤 방식 채택.
 
 ## 4. 회고 (Retrospective: KPT)

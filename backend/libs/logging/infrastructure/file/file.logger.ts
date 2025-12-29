@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import { join } from 'path';
+import { ConfigService } from '@nestjs/config';
 import { LoggerPort } from '../../core/port/out/logger.port';
 import { WideEvent } from '../../core/domain/wide-event';
 
@@ -17,12 +18,13 @@ export class FileLogger
   private readonly logFilePath: string;
   private logFileHandle: fs.FileHandle | null = null;
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
     super();
     // Default to logs/app.log in the project root
     // Can be overridden via LOG_FILE_PATH environment variable
     this.logFilePath =
-      process.env.LOG_FILE_PATH || join(process.cwd(), 'logs', 'app.log');
+      this.configService.get<string>('LOG_FILE_PATH') ||
+      join(process.cwd(), 'logs', 'app.log');
   }
 
   async onModuleInit(): Promise<void> {

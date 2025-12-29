@@ -1,8 +1,10 @@
-import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { LoggerPort } from '../core/port/out/logger.port';
 import { WideEvent } from '../core/domain/wide-event';
 import { LoggingContext } from '../core/domain/context';
 import { ContextService } from './context.service';
+import { Latency } from '../core/domain/latency';
+import { LatencyBucket } from '../core/domain/value-objects';
 
 /**
  * LoggingService - Application layer service for managing Wide Events.
@@ -29,6 +31,7 @@ export class LoggingService implements OnModuleDestroy {
       timestamp: new Date().toISOString(),
       service,
       route,
+      _metadata: {},
     };
     return context;
   }
@@ -59,9 +62,9 @@ export class LoggingService implements OnModuleDestroy {
    */
   addMetadata(metadata: Record<string, any>): void {
     const currentContext = this.contextService.getContext();
-    const existingMetadata = currentContext?.metadata || {};
+    const existingMetadata = currentContext?._metadata || {};
     this.contextService.updateContext({
-      metadata: { ...existingMetadata, ...metadata },
+      _metadata: { ...existingMetadata, ...metadata },
     });
   }
 
@@ -99,10 +102,37 @@ export class LoggingService implements OnModuleDestroy {
       user: context.user as any,
       error: context.error as any,
       performance: context.performance,
-      metadata: context.metadata,
     });
 
-    await this.logger.log(event);
+    // Phase 3: Generate deterministic summary and embedding status
+    const _summary = this.generateSummary(context);
+
+    // We pass the core event plus internal processing fields to the logger.
+    // This preserves the WideEvent domain model while allowing infrastructure
+    // to store semantic enrichment data.
+    await this.logger.log(event, context._metadata, _summary);
+  }
+
+  /**
+   * Phase 3: Deterministic Semantic Serialization
+   * Generates a stable text representation of the event for vector embeddings.
+   */
+  private generateSummary(context: LoggingContext): string {
+    const { service, route, error, user, performance } = context;
+
+    const errorCode = error?.code ?? 'NONE';
+    const errorMessage = error?.message ?? 'NONE';
+    const userRole = user?.role ?? 'ANONYMOUS';
+    const latencyBucket = Latency.getBucket(performance?.durationMs);
+    const outcome = error
+      ? 'FAILED'
+      : latencyBucket === LatencyBucket.P_OVER_1000MS
+        ? 'WARNING'
+        : latencyBucket === LatencyBucket.P_UNKNOWN
+          ? 'EDGE_CASE'
+          : 'SUCCESS';
+
+    return `Outcome: ${outcome}, Service: ${service}, Route: ${route}, Error: ${errorCode}, ErrorMessage: ${errorMessage}, UserRole: ${userRole}, LatencyBucket: ${latencyBucket}`;
   }
 
   /**

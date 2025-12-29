@@ -8,7 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { UserRole } from './types';
+import { UserRole } from './value-objects';
 
 export class WideEventUser {
   @IsString()

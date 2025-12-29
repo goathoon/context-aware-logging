@@ -14,44 +14,103 @@ db.createCollection('wide_events', {
     metaField: 'service',
     granularity: 'seconds',
   },
+})
+
+// Phase 2 Index Strategy
+db.wide_events.createIndexes([
+  { name: 'requestId_index', fields: [{ requestId: 1 }] },
+  { name: 'timestamp_index', fields: [{ timestamp: 1 }] },
+  { name: 'service_index', fields: [{ service: 1 }] },
+])
+
+// Phase 3 Strategy
+// Create High Water Mark Collection
+// For Tracking Embedding Progress
+db.createCollection('embedding_progress', {
   validator: {
     $jsonSchema: {
       bsonType: 'object',
-      required: ['requestId', 'timestamp', 'service', 'route'],
+      required: ['source', 'lastEmbeddedEventId', 'lastEmbeddedEventTimestamp'],
       properties: {
-        requestId: { bsonType: 'string' },
-        timestamp: { bsonType: 'date' },
-        service: { bsonType: 'string' },
-        route: { bsonType: 'string' },
-        user: {
-          bsonType: 'object',
-          properties: {
-            id: { bsonType: 'string' },
-            role: { bsonType: 'string' },
-          },
+        source: {
+          bsonType: 'string',
+          description: 'Source collection name (e.g. wide_events)',
         },
-        error: {
-          bsonType: 'object',
-          properties: {
-            code: { bsonType: 'string' },
-            message: { bsonType: 'string' },
-          },
+        lastEmbeddedEventId: {
+          bsonType: 'objectId',
+          description: 'Last embedded WideEvent _id (ObjectID)',
         },
-        performance: {
-          bsonType: 'object',
-          properties: {
-            durationMs: { bsonType: 'number' },
-          },
+        lastEmbeddedEventTimestamp: {
+          bsonType: 'date',
+          description: 'Timestamp of the last embedded WideEvent (ISO string)',
+        },
+        lastUpdatedAt: {
+          bsonType: 'date',
+          description: 'Timestamp of the last update (ISO string)',
         },
       },
     },
   },
 })
 
-// Phase 2 Index Strategy
-db.wide_events.createIndex({ requestId: 1 })
-db.wide_events.createIndex({ 'user.id': 1 })
-db.wide_events.createIndex({ 'error.code': 1 })
+// Embedded Results Collection
+db.createCollection('wide_events_embedded', {
+  validator: {
+    $jsonSchema: {
+      bsonType: 'object',
+      required: ['eventId', 'summary', 'model', 'embedding', 'createdAt'],
+      properties: {
+        eventId: {
+          bsonType: 'objectId',
+          description: 'WideEvent eventId (ObjectID)',
+        },
+        summary: {
+          bsonType: 'string',
+          description: 'Summary of the WideEvent',
+        },
+        model: {
+          bsonType: 'string',
+          description: 'Model used to embed the WideEvent',
+        },
+        embedding: {
+          bsonType: 'array',
+          description: 'Embedding of the WideEvent',
+          items: {
+            bsonType: 'number',
+            description: 'Embedding element',
+          },
+        },
+        createdAt: {
+          bsonType: 'date',
+          description:
+            'Timestamp of the WideEvent embedding creation (ISO string)',
+        },
+      },
+    },
+  },
+})
 
-// TTL Strategy: 30 days retention (30 * 24 * 60 * 60 seconds)
-db.wide_events.createIndex({ timestamp: 1 }, { expireAfterSeconds: 2592000 })
+db.wide_events_embedded.createSearchIndexes([
+  {
+    name: 'embedding_index',
+    type: 'vectorSearch',
+    definition: {
+      fields: [
+        {
+          type: 'vector',
+          path: 'embedding',
+          numDimensions: 512,
+          similarity: 'cosine',
+        },
+        {
+          type: 'filter',
+          path: 'eventId',
+        },
+        {
+          type: 'filter',
+          path: 'createdAt',
+        },
+      ],
+    },
+  },
+])

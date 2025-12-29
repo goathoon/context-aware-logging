@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MongoClient, Db, Collection, Document } from 'mongodb';
 
 /**
@@ -18,9 +19,9 @@ export class MongoConnectionClient implements OnModuleInit, OnModuleDestroy {
   private readonly uri: string;
   private readonly dbName: string;
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
     this.uri =
-      process.env.MONGODB_URI ||
+      this.configService.get<string>('MONGODB_URI') ||
       'mongodb://eventsAdmin:eventsAdmin@localhost:27016/wide_events?authSource=wide_events&directConnection=true';
     this.dbName = 'wide_events';
   }
