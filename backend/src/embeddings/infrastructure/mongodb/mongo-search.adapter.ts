@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ChatHistoryPort } from "@embeddings/out-ports";
 import { AnalysisResult, AnalysisIntent } from "@embeddings/domain";
-import { MongoEmbeddingConnection } from "./mongo.client";
+import { MongoEmbeddingClient } from "./mongo.client";
 
 @Injectable()
 export class MongoSearchAdapter extends ChatHistoryPort {
@@ -9,13 +9,13 @@ export class MongoSearchAdapter extends ChatHistoryPort {
   private readonly historyCollection = "chat_history";
   private readonly logsCollection = "wide_events";
 
-  constructor(private readonly connection: MongoEmbeddingConnection) {
+  constructor(private readonly client: MongoEmbeddingClient) {
     super();
   }
 
   async save(result: AnalysisResult): Promise<void> {
     try {
-      const collection = this.connection.getCollection(this.historyCollection);
+      const collection = this.client.getCollection(this.historyCollection);
       await collection.insertOne({
         ...result,
         createdAt: new Date(),
@@ -28,7 +28,7 @@ export class MongoSearchAdapter extends ChatHistoryPort {
 
   async findBySessionId(sessionId: string): Promise<AnalysisResult[]> {
     try {
-      const collection = this.connection.getCollection(this.historyCollection);
+      const collection = this.client.getCollection(this.historyCollection);
       const docs = await collection
         .find({ sessionId })
         .sort({ createdAt: 1 })
@@ -55,7 +55,7 @@ export class MongoSearchAdapter extends ChatHistoryPort {
    */
   async findLogsByRequestIds(requestIds: string[]): Promise<any[]> {
     try {
-      const collection = this.connection.getCollection(this.logsCollection);
+      const collection = this.client.getCollection(this.logsCollection);
       return await collection
         .find({ requestId: { $in: requestIds } })
         .toArray();

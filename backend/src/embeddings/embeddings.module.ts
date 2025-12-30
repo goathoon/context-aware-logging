@@ -15,7 +15,7 @@ import {
   GeminiClient,
   MongoLogAdapter,
   MongoSearchAdapter,
-  MongoEmbeddingConnection,
+  MongoEmbeddingClient,
 } from "@embeddings/infrastructure";
 import {
   EmbeddingController,
@@ -28,7 +28,7 @@ import {
     // Infrastructure Clients (Initialization only)
     VoyageClient,
     GeminiClient,
-    MongoEmbeddingConnection,
+    MongoEmbeddingClient,
     // Services (Inbound Ports, Use Cases)
     {
       provide: EmbeddingUseCase,

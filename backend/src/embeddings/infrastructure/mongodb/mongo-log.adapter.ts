@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { LogStoragePort, Watermark } from "@embeddings/out-ports";
 import { LogEmbeddingEntity } from "@embeddings/domain";
-import { MongoEmbeddingConnection } from "./mongo.client";
+import { MongoEmbeddingClient } from "./mongo.client";
 import { EmbeddingStatus } from "@logging/value-objects";
 import { QueryMetadata } from "@embeddings/dtos";
 
@@ -12,13 +12,13 @@ export class MongoLogAdapter extends LogStoragePort {
   private readonly progressCollection = "embedding_progress";
   private readonly embeddedCollection = "wide_events_embedded";
 
-  constructor(private readonly connection: MongoEmbeddingConnection) {
+  constructor(private readonly client: MongoEmbeddingClient) {
     super();
   }
 
   async getWatermark(source: string): Promise<Watermark | null> {
     try {
-      const collection = this.connection.getCollection(this.progressCollection);
+      const collection = this.client.getCollection(this.progressCollection);
       const doc = await collection.findOne({ source });
 
       if (!doc) return null;
@@ -41,7 +41,7 @@ export class MongoLogAdapter extends LogStoragePort {
     limit: number,
   ): Promise<LogEmbeddingEntity[]> {
     try {
-      const collection = this.connection.getCollection(source);
+      const collection = this.client.getCollection(source);
 
       const query: any = {
         _summary: { $exists: true, $ne: "" },
@@ -98,12 +98,8 @@ export class MongoLogAdapter extends LogStoragePort {
     newWatermark: Watermark,
   ): Promise<void> {
     try {
-      const embeddedColl = this.connection.getCollection(
-        this.embeddedCollection,
-      );
-      const progressColl = this.connection.getCollection(
-        this.progressCollection,
-      );
+      const embeddedColl = this.client.getCollection(this.embeddedCollection);
+      const progressColl = this.client.getCollection(this.progressCollection);
 
       if (results.length > 0) {
         const insertDocs = results.map((r) => ({
@@ -150,7 +146,7 @@ export class MongoLogAdapter extends LogStoragePort {
     metadata?: QueryMetadata,
   ): Promise<any[]> {
     try {
-      const collection = this.connection.getCollection(this.embeddedCollection);
+      const collection = this.client.getCollection(this.embeddedCollection);
 
       const filter: any = {};
       if (metadata) {
@@ -199,7 +195,7 @@ export class MongoLogAdapter extends LogStoragePort {
 
   async getLogsByEventIds(eventIds: any[]): Promise<any[]> {
     try {
-      const collection = this.connection.getCollection(this.collectionName);
+      const collection = this.client.getCollection(this.collectionName);
       return await collection.find({ _id: { $in: eventIds } }).toArray();
     } catch (error) {
       this.logger.error(`Failed to get logs by event IDs: ${error.message}`);
