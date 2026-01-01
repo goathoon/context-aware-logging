@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { promises as fs } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { ConfigService } from "@nestjs/config";
 import { LoggerPort } from "@logging/out-ports";
 import { WideEvent } from "@logging/domain";
@@ -20,13 +20,21 @@ export class FileLogger
 
   constructor(private readonly configService: ConfigService) {
     super();
+    // Resolve log file path relative to project root (backend/)
+    // projectRoot is now initialized once in ConfigModule
+    const projectRoot = this.configService.get<string>("paths.projectRoot");
+
+    if (!projectRoot) {
+      throw new Error("Project root path not configured");
+    }
+
     this.logFilePath =
       this.configService.get<string>("LOG_FILE_PATH") ||
-      join(process.cwd(), "logs", "app.log");
+      join(projectRoot, "logs", "app.log");
   }
 
   async onModuleInit(): Promise<void> {
-    const logDir = join(this.logFilePath, "..");
+    const logDir = dirname(this.logFilePath);
     try {
       await fs.mkdir(logDir, { recursive: true });
     } catch {}

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { LogStoragePort } from "@embeddings/out-ports";
 import { QueryMetadata } from "@embeddings/dtos";
+import { METRIC_TEMPLATES } from "@embeddings/value-objects/constants";
 
 /**
  * AggregationService - Handles statistical aggregations on log data.
@@ -15,241 +16,73 @@ export class AggregationService {
   constructor(private readonly logStoragePort: LogStoragePort) {}
 
   /**
-   * Aggregates error codes by count, returning top N error codes.
+   * Executes a metric template by ID with the provided parameters.
    *
-   * @param metadata Query metadata containing time range and filters
-   * @param topN Number of top error codes to return (default: 5)
-   * @returns Array of error codes with their counts and example logs
+   * @param templateId The ID of the template in METRIC_TEMPLATES
+   * @param params Parameters to pass to the template pipeline function
+   * @returns Aggregation results
+   */
+  async executeTemplate(
+    templateId: string,
+    params: Record<string, any>,
+  ): Promise<any[]> {
+    const template = METRIC_TEMPLATES[templateId];
+    if (!template) {
+      this.logger.error(`Template not found: ${templateId}`);
+      throw new Error(`Metric template ${templateId} not found`);
+    }
+
+    this.logger.log(
+      `Executing metric template: ${template.name} (${templateId})`,
+    );
+
+    const pipeline = template.pipelineTemplate(params);
+
+    try {
+      const results = await this.logStoragePort.executeAggregation(
+        pipeline,
+        "wide_events",
+      );
+      this.logger.log(
+        `Template execution completed: ${results.length} results found`,
+      );
+      return results;
+    } catch (error) {
+      this.logger.error(
+        `Template execution failed (${templateId}): ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Aggregates error codes by count, returning top N error codes.
    */
   async aggregateErrorCodesByCount(
     metadata: QueryMetadata,
     topN: number = 5,
-  ): Promise<
-    Array<{
-      errorCode: string;
-      count: number;
-      examples: any[];
-    }>
-  > {
-    this.logger.log(
-      `Aggregating error codes by count (top ${topN}) with metadata: ${JSON.stringify(metadata)}`,
-    );
-
-    const matchStage: any = {
-      "error.code": { $exists: true, $ne: null },
-    };
-
-    if (metadata.startTime || metadata.endTime) {
-      matchStage.timestamp = {};
-      if (metadata.startTime) {
-        matchStage.timestamp.$gte = metadata.startTime;
-      }
-      if (metadata.endTime) {
-        matchStage.timestamp.$lte = metadata.endTime;
-      }
-    }
-
-    if (metadata.service) {
-      matchStage.service = metadata.service;
-    }
-
-    const pipeline = [
-      {
-        $match: matchStage,
-      },
-      {
-        $group: {
-          _id: "$error.code",
-          count: { $sum: 1 },
-          examples: {
-            $push: {
-              requestId: "$requestId",
-              timestamp: "$timestamp",
-              service: "$service",
-              route: "$route",
-              errorCode: "$error.code",
-              errorMessage: "$error.message",
-            },
-          },
-        },
-      },
-
-      {
-        $sort: { count: -1 },
-      },
-      {
-        $limit: topN,
-      },
-      {
-        $project: {
-          _id: 0,
-          errorCode: "$_id",
-          count: 1,
-          examples: { $slice: ["$examples", 3] }, // Top 3 examples per error code
-        },
-      },
-    ];
-
-    try {
-      const results = await this.logStoragePort.executeAggregation(
-        pipeline,
-        "wide_events",
-      );
-      this.logger.log(
-        `Aggregation completed: ${results.length} error codes found`,
-      );
-      return results;
-    } catch (error) {
-      this.logger.error(
-        `Error aggregation failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+  ): Promise<any[]> {
+    return this.executeTemplate("TOP_ERROR_CODES", { metadata, topN });
   }
 
   /**
    * Aggregates errors by route, returning top N routes with most errors.
-   *
-   * @param metadata Query metadata containing time range and filters
-   * @param topN Number of top routes to return (default: 5)
-   * @returns Array of routes with their error counts
    */
   async aggregateErrorsByRoute(
     metadata: QueryMetadata,
     topN: number = 5,
-  ): Promise<
-    Array<{
-      route: string;
-      count: number;
-      errorCodes: Array<{ code: string; count: number }>;
-    }>
-  > {
-    this.logger.log(
-      `Aggregating errors by route (top ${topN}) with metadata: ${JSON.stringify(metadata)}`,
-    );
-
-    const matchStage: any = {
-      "error.code": { $exists: true, $ne: null },
-    };
-
-    if (metadata.startTime || metadata.endTime) {
-      matchStage.timestamp = {};
-      if (metadata.startTime) {
-        matchStage.timestamp.$gte = metadata.startTime;
-      }
-      if (metadata.endTime) {
-        matchStage.timestamp.$lte = metadata.endTime;
-      }
-    }
-
-    if (metadata.service) {
-      matchStage.service = metadata.service;
-    }
-
-    const pipeline = [
-      { $match: matchStage },
-      {
-        $group: {
-          _id: "$route",
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: topN },
-      {
-        $project: {
-          _id: 0,
-          route: "$_id",
-          count: 1,
-          errorCodes: [],
-        },
-      },
-    ];
-
-    try {
-      const results = await this.logStoragePort.executeAggregation(
-        pipeline,
-        "wide_events",
-      );
-      this.logger.log(
-        `Route aggregation completed: ${results.length} routes found`,
-      );
-      return results;
-    } catch (error) {
-      this.logger.error(
-        `Route aggregation failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+  ): Promise<any[]> {
+    return this.executeTemplate("ERROR_DISTRIBUTION_BY_ROUTE", {
+      metadata,
+      topN,
+    });
   }
 
   /**
    * Aggregates errors by service, returning error counts per service.
-   *
-   * @param metadata Query metadata containing time range and filters
-   * @returns Array of services with their error counts
    */
-  async aggregateErrorsByService(metadata: QueryMetadata): Promise<
-    Array<{
-      service: string;
-      count: number;
-      topErrorCodes: Array<{ code: string; count: number }>;
-    }>
-  > {
-    this.logger.log(
-      `Aggregating errors by service with metadata: ${JSON.stringify(metadata)}`,
-    );
-
-    const matchStage: any = {
-      "error.code": { $exists: true, $ne: null },
-    };
-
-    if (metadata.startTime || metadata.endTime) {
-      matchStage.timestamp = {};
-      if (metadata.startTime) {
-        matchStage.timestamp.$gte = metadata.startTime;
-      }
-      if (metadata.endTime) {
-        matchStage.timestamp.$lte = metadata.endTime;
-      }
-    }
-
-    const pipeline = [
-      { $match: matchStage },
-      {
-        $group: {
-          _id: "$service",
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-      {
-        $project: {
-          _id: 0,
-          service: "$_id",
-          count: 1,
-          topErrorCodes: [],
-        },
-      },
-    ];
-
-    try {
-      const results = await this.logStoragePort.executeAggregation(
-        pipeline,
-        "wide_events",
-      );
-      this.logger.log(
-        `Service aggregation completed: ${results.length} services found`,
-      );
-      return results;
-    } catch (error) {
-      this.logger.error(
-        `Service aggregation failed: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    }
+  async aggregateErrorsByService(metadata: QueryMetadata): Promise<any[]> {
+    return this.executeTemplate("ERROR_BY_SERVICE", { metadata });
   }
 }

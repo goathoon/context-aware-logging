@@ -1,4 +1,6 @@
 export const STATISTIC_KEYWORDS: string[] = [
+  "빈도",
+  "frequency",
   "얼마나",
   "how many",
   "몇 번",

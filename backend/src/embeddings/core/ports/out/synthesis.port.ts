@@ -37,4 +37,37 @@ export abstract class SynthesisPort {
    * @returns Concise summary of the conversation history
    */
   abstract summarizeHistory(history: AnalysisResult[]): Promise<string>;
+
+  /**
+   * Analyzes a natural language query for statistical intent and extracts parameters.
+   *
+   * @param query The natural language query
+   * @param initialMetadata Optional initial metadata extracted from the query (to avoid re-extraction)
+   * @returns The selected template ID and parameters
+   */
+  abstract analyzeStatisticalQuery(
+    query: string,
+    initialMetadata?: QueryMetadata,
+  ): Promise<{ templateId: string; params: Record<string, any> }>;
+
+  /**
+   * Verifies that a generated answer is strictly supported by the grounding context.
+   * This prevents hallucinations by fact-checking the answer against the provided logs.
+   *
+   * @param query The original query
+   * @param answer The generated answer to verify
+   * @param groundingContext The log contexts used to generate the answer
+   * @returns Verification result with status, confidence adjustment, and unverified claims
+   */
+  abstract verifyGrounding(
+    query: string,
+    answer: string,
+    groundingContext: any[],
+  ): Promise<{
+    status: "VERIFIED" | "PARTIALLY_VERIFIED" | "NOT_VERIFIED";
+    confidenceAdjustment: number;
+    unverifiedClaims: string[];
+    action: "KEEP_ANSWER" | "ADJUST_CONFIDENCE" | "REJECT_ANSWER";
+    reasoning: string;
+  }>;
 }

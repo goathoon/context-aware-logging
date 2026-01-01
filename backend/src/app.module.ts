@@ -3,6 +3,7 @@ import { APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
+import pathConfig from "@config/utils/path.config";
 import { LoggingModule } from "@logging";
 import { LoggingInterceptor } from "@logging/presentation";
 import { PaymentsModule } from "@payments";
@@ -13,6 +14,7 @@ import { EmbeddingsModule } from "@embeddings";
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ".env",
+      load: [pathConfig],
     }),
     LoggingModule,
     PaymentsModule,

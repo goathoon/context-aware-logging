@@ -8,7 +8,9 @@ import {
   SemanticSynthesisPrompt,
   QueryReformulationSynthesisPrompt,
   HistorySummarizationSynthesisPrompt,
-} from "src/embeddings/core/value-objects/prompts/synthesis";
+  StatisticalAnalysisPrompt,
+  GroundingVerificationPrompt,
+} from "@embeddings/value-objects/prompts";
 
 /**
  * GeminiAdapter - Adapter that performs actual Gemini API operations
@@ -24,6 +26,8 @@ export class GeminiAdapter extends SynthesisPort {
     private readonly semanticPrompt: SemanticSynthesisPrompt,
     private readonly queryReformulationPrompt: QueryReformulationSynthesisPrompt,
     private readonly historySummarizationPrompt: HistorySummarizationSynthesisPrompt,
+    private readonly statisticalAnalysisPrompt: StatisticalAnalysisPrompt,
+    private readonly groundingVerificationPrompt: GroundingVerificationPrompt,
   ) {
     super();
   }
@@ -56,6 +60,111 @@ export class GeminiAdapter extends SynthesisPort {
         route: null,
         errorCode: null,
         hasError: false,
+      };
+    }
+  }
+
+  /**
+   * Analyzes a natural language query for statistical intent and extracts parameters.
+   *
+   * @param query The natural language query
+   * @param initialMetadata Optional initial metadata extracted from the query (to avoid re-extraction)
+   * @returns The selected template ID and parameters
+   */
+  async analyzeStatisticalQuery(
+    query: string,
+    initialMetadata?: QueryMetadata,
+  ): Promise<{ templateId: string; params: Record<string, any> }> {
+    try {
+      this.logger.log(`Analyzing statistical intent for query: "${query}"`);
+      const prompt = this.statisticalAnalysisPrompt.build({
+        query,
+        initialMetadata,
+      });
+
+      const jsonModel = this.geminiClient.getJsonModel();
+      const result = await jsonModel.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      const parsed = JSON.parse(text);
+
+      this.logger.debug(
+        `Statistical analysis result: ${JSON.stringify(parsed)}`,
+      );
+
+      // Use initial metadata as fallback if LLM didn't provide time range
+      let finalMetadata = parsed.params?.metadata || {};
+      if (initialMetadata) {
+        // Prefer initial metadata for time range (more accurate)
+        if (initialMetadata.startTime && !finalMetadata.startTime) {
+          finalMetadata.startTime = initialMetadata.startTime.toISOString();
+        }
+        if (initialMetadata.endTime && !finalMetadata.endTime) {
+          finalMetadata.endTime = initialMetadata.endTime.toISOString();
+        }
+        // Merge other metadata fields if not provided by LLM
+        if (!finalMetadata.service && initialMetadata.service) {
+          finalMetadata.service = initialMetadata.service;
+        }
+        if (!finalMetadata.route && initialMetadata.route) {
+          finalMetadata.route = initialMetadata.route;
+        }
+        if (!finalMetadata.errorCode && initialMetadata.errorCode) {
+          finalMetadata.errorCode = initialMetadata.errorCode;
+        }
+        if (
+          finalMetadata.hasError === undefined &&
+          initialMetadata.hasError !== undefined
+        ) {
+          finalMetadata.hasError = initialMetadata.hasError;
+        }
+      }
+
+      // Convert ISO strings to Date objects
+      if (finalMetadata.startTime) {
+        finalMetadata.startTime = new Date(finalMetadata.startTime);
+      }
+      if (finalMetadata.endTime) {
+        finalMetadata.endTime = new Date(finalMetadata.endTime);
+      }
+
+      return {
+        templateId: parsed.templateId || "TOP_ERROR_CODES",
+        params: {
+          ...parsed.params,
+          metadata: finalMetadata,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Statistical analysis failed: ${error.message}`);
+      // Use initial metadata in fallback if available
+      const fallbackMetadata = initialMetadata
+        ? {
+            startTime: initialMetadata.startTime?.toISOString() || null,
+            endTime: initialMetadata.endTime?.toISOString() || null,
+            service: initialMetadata.service || null,
+            route: initialMetadata.route || null,
+            errorCode: initialMetadata.errorCode || null,
+            hasError:
+              initialMetadata.hasError !== undefined
+                ? initialMetadata.hasError
+                : true,
+          }
+        : {
+            startTime: null,
+            endTime: null,
+            service: null,
+            route: null,
+            errorCode: null,
+            hasError: true,
+          };
+
+      return {
+        templateId: "TOP_ERROR_CODES",
+        params: {
+          topN: 5,
+          metadata: fallbackMetadata,
+        },
       };
     }
   }
@@ -210,6 +319,92 @@ export class GeminiAdapter extends SynthesisPort {
         `History summarization failed: ${error.message}, using simple summary`,
       );
       return HistorySummarizationSynthesisPrompt.createSimpleSummary(history);
+    }
+  }
+
+  async verifyGrounding(
+    query: string,
+    answer: string,
+    groundingContext: any[],
+  ): Promise<{
+    status: "VERIFIED" | "PARTIALLY_VERIFIED" | "NOT_VERIFIED";
+    confidenceAdjustment: number;
+    unverifiedClaims: string[];
+    action: "KEEP_ANSWER" | "ADJUST_CONFIDENCE" | "REJECT_ANSWER";
+    reasoning: string;
+  }> {
+    try {
+      this.logger.log(
+        `Verifying grounding for answer (length: ${answer.length}, context items: ${groundingContext.length})`,
+      );
+
+      const groundingContextText =
+        GroundingVerificationPrompt.formatGroundingContext(groundingContext);
+      const prompt = this.groundingVerificationPrompt.build({
+        query,
+        answer,
+        groundingContext: groundingContextText,
+      });
+
+      const jsonModel = this.geminiClient.getJsonModel();
+      const result = await jsonModel.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+
+      // Parse JSON response
+      let parsed: any;
+      try {
+        // Try to extract JSON from markdown code blocks if present
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+        const jsonText = jsonMatch ? jsonMatch[1] : text;
+        parsed = JSON.parse(jsonText.trim());
+      } catch (parseError) {
+        // If JSON parsing fails, try to parse the raw text
+        parsed = JSON.parse(text.trim());
+      }
+
+      // Validate and normalize the response
+      const status = parsed.status || "NOT_VERIFIED";
+      const confidenceAdjustment = Math.max(
+        0,
+        Math.min(1, parsed.confidenceAdjustment ?? 0.5),
+      );
+      const unverifiedClaims = Array.isArray(parsed.unverifiedClaims)
+        ? parsed.unverifiedClaims
+        : [];
+      const action = parsed.action || "ADJUST_CONFIDENCE";
+      const reasoning = parsed.reasoning || "Verification completed";
+
+      this.logger.log(
+        `Grounding verification result: ${status}, confidence adjustment: ${confidenceAdjustment}, action: ${action}`,
+      );
+
+      if (unverifiedClaims.length > 0) {
+        this.logger.warn(
+          `Found ${unverifiedClaims.length} unverified claims: ${unverifiedClaims.join(", ")}`,
+        );
+      }
+
+      return {
+        status,
+        confidenceAdjustment,
+        unverifiedClaims,
+        action,
+        reasoning,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Grounding verification failed: ${error.message}`,
+        error.stack,
+      );
+      // On error, return conservative verification result
+      return {
+        status: "NOT_VERIFIED",
+        confidenceAdjustment: 0.3,
+        unverifiedClaims: ["Verification process failed"],
+        action: "ADJUST_CONFIDENCE",
+        reasoning: `Verification error: ${error.message}`,
+      };
     }
   }
 }

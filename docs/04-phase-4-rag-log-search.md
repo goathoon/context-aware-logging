@@ -96,20 +96,34 @@ To prevent hallucinations, the context provided to Gemini 1.5 Flash is strictly 
   - Enables precise linking back to original `wide_events` documents
   - Supports traceability and evidence-based answers
 
-### Step 3: Conversational RAG (Multi-turn Context)
+### Step 3: Conversational RAG (Multi-turn Context) - [Completed]
 
 - **Query Reformulation**: LLM rewrites the user's latest question based on chat history (e.g., "Why did _it_ fail?" -> "Why did the payment fail for user-123?").
 - **Session Management**: Leverage the `chat_history` collection to maintain state across multiple interactions.
+- **SessionCacheService**: In-memory session history caching with TTL (30 minutes default).
+- **ContextCompressionService**: Compress long conversation history to reduce token usage while preserving important context.
 
-### Step 4: Metric Engine & Templates (Path A Completion)
+### Step 4: Metric Engine & Templates (Path A Completion) - [Completed]
 
 - **Template Registry**: Build a library of optimized MongoDB Aggregation pipelines for common metrics (P95 latency, error count by route).
 - **Parameter Mapping**: Use LLM to map NL entities to template parameters (e.g., "checkout" -> `{ route: "/payments/checkout" }`).
+  - route-pattern-constants.ts
+- **LLM-based Statistical Analysis**: `analyzeStatisticalQuery()` method extracts template ID and parameters from natural language queries.
+- **Advanced Metrics**: Support for P50, P95, P99 latency analysis templates.
 
-### Step 5: Reliability & Performance Hardening
+### Step 5: Reliability & Performance Hardening - [Completed]
 
 - **Grounding Verification**: Implement a "Fact Check" stage where the LLM verifies its own synthesis against the grounding pack before final output.
+  - `verifyGrounding()` method in `SynthesisPort` interface
+  - Verification status: VERIFIED, PARTIALLY_VERIFIED, NOT_VERIFIED
+  - Action handling: REJECT_ANSWER, ADJUST_CONFIDENCE, KEEP_ANSWER
+  - Confidence adjustment based on verification results
+  - Unverified claims logging for monitoring
 - **Semantic Caching**: Cache vector-query results to serve similar questions instantly, reducing API costs and latency.
+  - `SemanticCacheService` with cosine similarity-based cache hit detection (threshold: 0.95)
+  - TTL management: 1 hour default, 15 minutes for time-range queries
+  - Metadata-based cache key generation with time normalization
+  - Periodic cleanup of expired entries (every 10 minutes)
 
 ## 5. Success Criteria
 

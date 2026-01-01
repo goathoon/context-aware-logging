@@ -6,6 +6,8 @@ import {
 } from "@nestjs/common";
 import { readFileSync, existsSync, watch } from "fs";
 import { join } from "path";
+import { ConfigService } from "@nestjs/config";
+import { PROMPT_TEMPLATE_FILES_MARKDOWN } from "@embeddings/value-objects/constants";
 
 /**
  * PromptTemplateConfig - Configuration structure for prompt templates
@@ -32,8 +34,16 @@ interface PromptTemplateConfig {
 export class PromptTemplateRegistry implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PromptTemplateRegistry.name);
   private readonly templates = new Map<string, PromptTemplateConfig>();
-  private readonly promptsDir = join(process.cwd(), "prompts");
+  private readonly promptsDir: string;
   private fileWatchers: Array<{ close: () => void }> = [];
+
+  constructor(private readonly configService: ConfigService) {
+    const projectRoot = this.configService.get<string>("paths.projectRoot");
+    if (!projectRoot) {
+      throw new Error("Project root path not configured");
+    }
+    this.promptsDir = join(projectRoot, "prompts");
+  }
 
   async onModuleInit(): Promise<void> {
     this.logger.log("Loading prompt templates from Markdown files...");
@@ -44,7 +54,6 @@ export class PromptTemplateRegistry implements OnModuleInit, OnModuleDestroy {
       `Loaded ${loadedCount} prompt template(s) into memory from ${this.promptsDir}`,
     );
 
-    // Enable hot reload in development
     if (process.env.NODE_ENV !== "production") {
       this.enableHotReload();
       this.logger.debug("Hot reload enabled for prompt templates");
@@ -63,14 +72,12 @@ export class PromptTemplateRegistry implements OnModuleInit, OnModuleDestroy {
     const match = content.match(frontmatterRegex);
 
     if (!match) {
-      // No frontmatter, return entire content as body
       return { frontmatter: {}, body: content.trim() };
     }
 
     const frontmatterText = match[1];
     const body = match[2].trim();
 
-    // Simple YAML parser for key: value pairs
     const frontmatter: Record<string, string> = {};
     const lines = frontmatterText.split("\n");
     for (const line of lines) {
@@ -95,22 +102,8 @@ export class PromptTemplateRegistry implements OnModuleInit, OnModuleDestroy {
    * Loads all prompt templates from Markdown files
    */
   private async loadTemplates(): Promise<void> {
-    const templateFiles = [
-      "query-metadata.md",
-      "semantic-synthesis.md",
-      "query-reformulation.md",
-      "history-summarization.md",
-    ];
+    const templateFiles = PROMPT_TEMPLATE_FILES_MARKDOWN;
 
-    // Also check for JSON files for backward compatibility
-    const jsonFiles = [
-      "query-metadata.json",
-      "semantic-synthesis.json",
-      "query-reformulation.json",
-      "history-summarization.json",
-    ];
-
-    // Load Markdown files first
     for (const file of templateFiles) {
       try {
         const filePath = join(this.promptsDir, file);
@@ -144,55 +137,13 @@ export class PromptTemplateRegistry implements OnModuleInit, OnModuleDestroy {
         this.logger.error(`Failed to load template ${file}: ${error.message}`);
       }
     }
-
-    // Load JSON files as fallback (for backward compatibility during migration)
-    for (const file of jsonFiles) {
-      // Skip if already loaded from Markdown
-      const mdFile = file.replace(".json", ".md");
-      const mdFilePath = join(this.promptsDir, mdFile);
-      if (existsSync(mdFilePath)) {
-        continue; // Markdown file exists, skip JSON
-      }
-
-      try {
-        const filePath = join(this.promptsDir, file);
-        if (!existsSync(filePath)) {
-          continue;
-        }
-
-        this.logger.debug(
-          `Loading JSON fallback: ${file} (Markdown file not found)`,
-        );
-        const content = readFileSync(filePath, "utf-8");
-        const config: PromptTemplateConfig = JSON.parse(content);
-
-        if (!config.type || !config.template) {
-          this.logger.error(
-            `Invalid template config in ${file}: missing type or template`,
-          );
-          continue;
-        }
-
-        this.templates.set(config.type, config);
-        this.logger.debug(
-          `Loaded template: ${config.type} (v${config.version || "unknown"}) from ${file}`,
-        );
-      } catch (error) {
-        this.logger.error(`Failed to load template ${file}: ${error.message}`);
-      }
-    }
   }
 
   /**
    * Enables hot reload for prompt template files (development only)
    */
   private enableHotReload(): void {
-    const templateFiles = [
-      "query-metadata.md",
-      "semantic-synthesis.md",
-      "query-reformulation.md",
-      "history-summarization.md",
-    ];
+    const templateFiles = PROMPT_TEMPLATE_FILES_MARKDOWN;
 
     for (const file of templateFiles) {
       const filePath = join(this.promptsDir, file);

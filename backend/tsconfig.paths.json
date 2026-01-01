@@ -2,6 +2,9 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
+      "@config": ["libs/config/index"],
+      "@config/utils/*": ["libs/config/utils/*"],
+
       "@logging": ["libs/logging/logging.module"],
       "@logging/domain": ["libs/logging/core/domain/index"],
       "@logging/value-objects": ["libs/logging/core/value-objects/index"],
@@ -24,9 +27,11 @@
       "@embeddings/value-objects/constants": [
         "src/embeddings/core/value-objects/constants/index"
       ],
+      "@embeddings/types": ["src/embeddings/core/types/index"],
       "@embeddings/dtos": ["src/embeddings/core/dtos/index"],
       "@embeddings/in-ports": ["src/embeddings/core/ports/in/index"],
       "@embeddings/out-ports": ["src/embeddings/core/ports/out/index"],
+      "@embeddings/utils": ["src/embeddings/core/utils/index"],
       "@embeddings/infrastructure": ["src/embeddings/infrastructure/index"],
       "@embeddings/service": ["src/embeddings/service/index"],
       "@embeddings/presentation": ["src/embeddings/presentation/index"],

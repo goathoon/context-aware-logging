@@ -16,6 +16,7 @@ import {
   SessionCacheService,
   QueryReformulationService,
   ContextCompressionService,
+  SemanticCacheService,
 } from "@embeddings/service";
 import {
   VoyageAdapter,
@@ -36,6 +37,8 @@ import {
   SemanticSynthesisPrompt,
   QueryReformulationSynthesisPrompt,
   HistorySummarizationSynthesisPrompt,
+  StatisticalAnalysisPrompt,
+  GroundingVerificationPrompt,
 } from "@embeddings/value-objects/prompts";
 
 @Module({
@@ -72,6 +75,20 @@ import {
       },
       inject: [PromptTemplateRegistry],
     },
+    {
+      provide: StatisticalAnalysisPrompt,
+      useFactory: (registry: PromptTemplateRegistry) => {
+        return new StatisticalAnalysisPrompt(registry);
+      },
+      inject: [PromptTemplateRegistry],
+    },
+    {
+      provide: GroundingVerificationPrompt,
+      useFactory: (registry: PromptTemplateRegistry) => {
+        return new GroundingVerificationPrompt(registry);
+      },
+      inject: [PromptTemplateRegistry],
+    },
     // Infrastructure Clients (Initialization only)
     VoyageClient,
     GeminiClient,
@@ -86,6 +103,8 @@ import {
     SessionCacheService,
     QueryReformulationService,
     ContextCompressionService,
+    // Step 5: Semantic Caching Service
+    SemanticCacheService,
     // Services (Inbound Ports, Use Cases)
     {
       provide: EmbeddingUseCase,

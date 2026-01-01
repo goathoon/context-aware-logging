@@ -17,6 +17,7 @@ import { AggregationService } from "./aggregation.service";
 import { SessionCacheService } from "./session-cache.service";
 import { QueryReformulationService } from "./query-reformulation.service";
 import { ContextCompressionService } from "./context-compression.service";
+import { SemanticCacheService } from "./semantic-cache.service";
 
 @Injectable()
 export class SearchService extends SearchUseCase {
@@ -32,6 +33,7 @@ export class SearchService extends SearchUseCase {
     private readonly sessionCache: SessionCacheService,
     private readonly queryReformulation: QueryReformulationService,
     private readonly contextCompression: ContextCompressionService,
+    private readonly semanticCache: SemanticCacheService,
   ) {
     super();
   }
@@ -111,11 +113,30 @@ export class SearchService extends SearchUseCase {
       `Performing vector search with embedding (dimension: ${embedding.length}), metadata: ${JSON.stringify(metadata)}`,
     );
 
-    const vectorResults = await this.logStoragePort.vectorSearch(
+    // Check semantic cache first
+    let vectorResults = this.semanticCache.getCachedResults(
       embedding,
-      10,
       metadata,
     );
+
+    if (vectorResults) {
+      this.logger.log(
+        `Semantic cache hit! Using cached vector results (${vectorResults.length} results)`,
+      );
+    } else {
+      // Cache miss - perform vector search
+      this.logger.log("Semantic cache miss, performing vector search");
+      vectorResults = await this.logStoragePort.vectorSearch(
+        embedding,
+        10,
+        metadata,
+      );
+
+      // Cache the results for future similar queries
+      if (vectorResults && vectorResults.length > 0) {
+        this.semanticCache.setCachedResults(embedding, metadata, vectorResults);
+      }
+    }
 
     this.logger.log(
       `Vector search returned ${vectorResults?.length || 0} results`,
@@ -187,12 +208,54 @@ export class SearchService extends SearchUseCase {
       compressedHistory,
     );
 
+    // Grounding Verification: Fact-check the answer against grounding context
+    let finalAnswer = answer;
+    let finalConfidence = confidence;
+    try {
+      const verification = await this.synthesisPort.verifyGrounding(
+        reformulatedQuery,
+        answer,
+        fullLogs,
+      );
+
+      this.logger.log(
+        `Grounding verification: ${verification.status}, action: ${verification.action}`,
+      );
+
+      // Apply verification results
+      if (verification.action === "REJECT_ANSWER") {
+        finalAnswer = "Not enough evidence to provide a reliable answer.";
+        finalConfidence = 0;
+        this.logger.warn(
+          `Answer rejected due to insufficient grounding. Unverified claims: ${verification.unverifiedClaims.join(", ")}`,
+        );
+      } else if (verification.action === "ADJUST_CONFIDENCE") {
+        // Adjust confidence based on verification result
+        finalConfidence = Math.min(
+          confidence,
+          confidence * verification.confidenceAdjustment,
+        );
+        if (verification.unverifiedClaims.length > 0) {
+          finalAnswer = `${answer}\n\n[Note: Some claims could not be fully verified: ${verification.unverifiedClaims.join(", ")}]`;
+        }
+        this.logger.log(
+          `Confidence adjusted from ${confidence} to ${finalConfidence} based on verification`,
+        );
+      }
+      // If action is "KEEP_ANSWER", use original answer and confidence
+    } catch (error) {
+      this.logger.error(
+        `Grounding verification failed, using original answer: ${error.message}`,
+      );
+      // On verification error, use original answer but log the issue
+    }
+
     const result: AnalysisResult = {
-      question: query, // Store original query in result
+      question: query,
       intent,
-      answer,
+      answer: finalAnswer,
       sources: requestIds,
-      confidence,
+      confidence: finalConfidence,
       sessionId,
     };
 
@@ -233,43 +296,58 @@ export class SearchService extends SearchUseCase {
           ? await this.contextCompression.compressHistory(history)
           : history;
 
-      const aggregationType = this.parseAggregationType(reformulatedQuery);
-      this.logger.log(`Detected aggregation type: ${aggregationType}`);
+      const { templateId, params } =
+        await this.synthesisPort.analyzeStatisticalQuery(
+          reformulatedQuery,
+          metadata,
+        );
+      this.logger.log(
+        `LLM detected template: ${templateId}, params: ${JSON.stringify(params)}`,
+      );
 
-      let aggregationResults: any;
+      const aggregationResults = await this.aggregation.executeTemplate(
+        templateId,
+        params,
+      );
+
       let contextLogs: any[] = [];
-
-      if (aggregationType === "error_code_top_n") {
-        const topN = this.extractTopN(query) || 5;
-        aggregationResults = await this.aggregation.aggregateErrorCodesByCount(
-          metadata,
-          topN,
-        );
-      } else if (aggregationType === "error_by_route") {
-        const topN = this.extractTopN(query) || 5;
-        aggregationResults = await this.aggregation.aggregateErrorsByRoute(
-          metadata,
-          topN,
-        );
-      } else if (aggregationType === "error_by_service") {
-        aggregationResults =
-          await this.aggregation.aggregateErrorsByService(metadata);
-      } else {
-        const topN = this.extractTopN(query) || 5;
-        aggregationResults = await this.aggregation.aggregateErrorCodesByCount(
-          metadata,
-          topN,
-        );
-      }
-
       if (aggregationResults && aggregationResults.length > 0) {
         const { embedding } =
           await this.embeddingPort.createEmbedding(reformulatedQuery);
-        contextLogs = await this.logStoragePort.vectorSearch(
+        const searchMetadata = params.metadata || metadata;
+
+        // Check semantic cache first
+        contextLogs = this.semanticCache.getCachedResults(
           embedding,
-          5,
-          metadata,
+          searchMetadata,
         );
+
+        if (contextLogs.length > 0) {
+          this.logger.log(
+            `Semantic cache hit for statistical query context logs (${contextLogs.length} results)`,
+          );
+          // Limit to 5 as requested
+          contextLogs = contextLogs.slice(0, 5);
+        } else {
+          // Cache miss - perform vector search
+          this.logger.log(
+            "Semantic cache miss for statistical query, performing vector search",
+          );
+          contextLogs = await this.logStoragePort.vectorSearch(
+            embedding,
+            5,
+            searchMetadata,
+          );
+
+          // Cache the results for future similar queries
+          if (contextLogs && contextLogs.length > 0) {
+            this.semanticCache.setCachedResults(
+              embedding,
+              searchMetadata,
+              contextLogs,
+            );
+          }
+        }
       }
 
       const synthesisContext = {
@@ -282,6 +360,54 @@ export class SearchService extends SearchUseCase {
         [synthesisContext],
         compressedHistory,
       );
+
+      // Grounding Verification: Fact-check the answer against grounding context
+      let finalAnswer = answer;
+      let finalConfidence = confidence;
+      try {
+        // Prepare grounding context for verification (aggregation results + context logs)
+        const verificationContext = [
+          ...(aggregationResults || []),
+          ...(contextLogs.slice(0, 5) || []),
+        ];
+
+        const verification = await this.synthesisPort.verifyGrounding(
+          reformulatedQuery,
+          answer,
+          verificationContext,
+        );
+
+        this.logger.log(
+          `Grounding verification: ${verification.status}, action: ${verification.action}`,
+        );
+
+        // Apply verification results
+        if (verification.action === "REJECT_ANSWER") {
+          finalAnswer = "Not enough evidence to provide a reliable answer.";
+          finalConfidence = 0;
+          this.logger.warn(
+            `Answer rejected due to insufficient grounding. Unverified claims: ${verification.unverifiedClaims.join(", ")}`,
+          );
+        } else if (verification.action === "ADJUST_CONFIDENCE") {
+          // Adjust confidence based on verification result
+          finalConfidence = Math.min(
+            confidence,
+            confidence * verification.confidenceAdjustment,
+          );
+          if (verification.unverifiedClaims.length > 0) {
+            finalAnswer = `${answer}\n\n[Note: Some claims could not be fully verified: ${verification.unverifiedClaims.join(", ")}]`;
+          }
+          this.logger.log(
+            `Confidence adjusted from ${confidence} to ${finalConfidence} based on verification`,
+          );
+        }
+        // If action is "KEEP_ANSWER", use original answer and confidence
+      } catch (error) {
+        this.logger.error(
+          `Grounding verification failed, using original answer: ${error.message}`,
+        );
+        // On verification error, use original answer but log the issue
+      }
 
       const requestIds = aggregationResults
         ? aggregationResults
@@ -296,9 +422,9 @@ export class SearchService extends SearchUseCase {
       const result: AnalysisResult = {
         question: query,
         intent,
-        answer,
+        answer: finalAnswer,
         sources: requestIds,
-        confidence,
+        confidence: finalConfidence,
         sessionId,
       };
 
@@ -340,68 +466,12 @@ export class SearchService extends SearchUseCase {
   }
 
   /**
-   * Parses the aggregation type from the query.
-   * Returns: "error_code_top_n", "error_by_route", "error_by_service", or "unknown"
+   * Creates an empty result for a query.
+   * @param question The query.
+   * @param intent The intent.
+   * @param sessionId The session ID.
+   * @returns The empty result.
    */
-  private parseAggregationType(query: string): string {
-    const lowerQuery = query.toLowerCase();
-
-    if (
-      lowerQuery.includes("원인") ||
-      lowerQuery.includes("error code") ||
-      lowerQuery.includes("에러 코드") ||
-      (lowerQuery.includes("에러") && lowerQuery.includes("상위"))
-    ) {
-      return "error_code_top_n";
-    }
-
-    if (
-      lowerQuery.includes("route") ||
-      lowerQuery.includes("경로") ||
-      lowerQuery.includes("엔드포인트")
-    ) {
-      return "error_by_route";
-    }
-
-    if (
-      lowerQuery.includes("service") ||
-      lowerQuery.includes("서비스") ||
-      lowerQuery.includes("별")
-    ) {
-      return "error_by_service";
-    }
-
-    return "error_code_top_n";
-  }
-
-  /**
-   * Extracts the "top N" number from the query.
-   * Returns the number if found, otherwise null.
-   */
-  private extractTopN(query: string): number | null {
-    const lowerQuery = query.toLowerCase();
-
-    const patterns = [
-      /상위\s*(\d+)/,
-      /top\s*(\d+)/,
-      /(\d+)\s*개/,
-      /(\d+)\s*개만/,
-      /(\d+)\s*개에\s*대해서만/,
-    ];
-
-    for (const pattern of patterns) {
-      const match = lowerQuery.match(pattern);
-      if (match && match[1]) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > 0) {
-          return num;
-        }
-      }
-    }
-
-    return null;
-  }
-
   private createEmptyResult(
     question: string,
     intent: AnalysisIntent,
