@@ -100,6 +100,7 @@ export class LoggingService implements OnModuleDestroy {
       user: context.user as any,
       error: context.error as any,
       performance: context.performance,
+      metadata: context._metadata,
     });
 
     // Phase 3: Generate deterministic summary and embedding status

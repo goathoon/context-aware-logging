@@ -1,6 +1,6 @@
 import { PromptTemplate } from "../prompt-template.vo";
 import { PromptTemplateRegistry } from "../prompt-template-registry";
-import { AnalysisResult } from "@embeddings/domain";
+import { AnalysisResult } from "@embeddings/dtos";
 import { HISTORY_SUMMARIZATION_FALLBACK } from "./fallbacks";
 /**
  * HistorySummarizationSynthesisPrompt - History summarization prompt template

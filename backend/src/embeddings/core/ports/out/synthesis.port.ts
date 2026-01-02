@@ -1,5 +1,5 @@
 import { QueryMetadata } from "@embeddings/dtos";
-import { AnalysisResult } from "@embeddings/domain";
+import { AnalysisResult } from "@embeddings/dtos";
 
 export abstract class SynthesisPort {
   /**

@@ -147,8 +147,8 @@ export class SearchService extends SearchUseCase {
 
     this.logger.log(
       `\n\n 
-        Original query: "${query}" \n\n
-        -> Structured query: "${structuredQuery}" \n\n`,
+        Original query: "${query}" \n
+        -> Structured query: "${structuredQuery}" \n`,
     );
 
     const { embedding } =

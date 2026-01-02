@@ -4,14 +4,16 @@ import {
   Body,
   HttpException,
   HttpStatus,
+  UseInterceptors,
 } from "@nestjs/common";
 import { PaymentsServicePort } from "@payments/in-ports";
 import { PaymentRequest } from "@payments/dtos";
 import { LoggingService } from "@logging/service";
-import { Service } from "@logging/presentation";
+import { LoggingInterceptor, Service } from "@logging/presentation";
 
 @Controller("payments")
 @Service("payments")
+@UseInterceptors(LoggingInterceptor)
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsServicePort,

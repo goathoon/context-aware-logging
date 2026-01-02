@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { EmbeddingUseCase, SearchUseCase } from "@embeddings/in-ports";
 import {
   EmbeddingPort,
@@ -6,6 +7,7 @@ import {
   SynthesisPort,
   ChatHistoryPort,
   LogStoragePort,
+  SessionCachePort,
 } from "@embeddings/out-ports";
 import { EmbeddingService, SearchService } from "@embeddings/service";
 import {
@@ -25,6 +27,9 @@ import {
   MongoLogStorageAdapter,
   MongoChatHistoryAdapter,
   MongoEmbeddingClient,
+  SessionInMemoryAdapter,
+  RedisClient,
+  SessionRedisAdapter,
 } from "@embeddings/infrastructure";
 import {
   EmbeddingController,
@@ -92,6 +97,7 @@ import {
     VoyageClient,
     GeminiClient,
     MongoEmbeddingClient,
+    RedisClient,
     // Query Preprocessing Service
     QueryPreprocessorService,
     // Summary Enrichment Service
@@ -133,6 +139,20 @@ import {
     {
       provide: LogStoragePort,
       useClass: MongoLogStorageAdapter,
+    },
+    // Session Cache: Redis (distributed) or InMemory (single instance)
+    // Set SESSION_CACHE_TYPE=redis or memory in .env to use Redis
+    {
+      provide: SessionCachePort,
+      useFactory: (configService: ConfigService, redisClient: RedisClient) => {
+        const cacheType =
+          configService.get<string>("SESSION_CACHE_TYPE") || "memory";
+        if (cacheType === "redis") {
+          return new SessionRedisAdapter(redisClient);
+        }
+        return new SessionInMemoryAdapter();
+      },
+      inject: [ConfigService, RedisClient],
     },
   ],
 })

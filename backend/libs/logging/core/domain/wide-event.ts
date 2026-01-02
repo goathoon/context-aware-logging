@@ -6,9 +6,9 @@ import {
   IsNumber,
   IsEnum,
   ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { UserRole } from '../value-objects';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { UserRole } from "../value-objects";
 
 export class WideEventUser {
   @IsString()

@@ -1,6 +1,6 @@
 import { PromptTemplate } from "../prompt-template.vo";
 import { PromptTemplateRegistry } from "../prompt-template-registry";
-import { AnalysisResult } from "@embeddings/domain";
+import { AnalysisResult } from "@embeddings/dtos";
 import { SEMANTIC_SYNTHESIS_FALLBACK } from "./fallbacks";
 /**
  * SemanticSynthesisPrompt - Semantic query synthesis prompt template

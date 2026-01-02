@@ -1,4 +1,4 @@
-import { Module, Global } from "@nestjs/common";
+import { Module, Global, Provider } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   LoggingService,
@@ -12,6 +12,7 @@ import {
   KafkaConsumerClient,
   KafkaProducer,
   KafkaLogger,
+  FileLogger,
 } from "@logging/infrastructure";
 import { LoggerPort } from "@logging/out-ports";
 import { MqProducerPort } from "@logging/out-ports";
@@ -28,62 +29,51 @@ import { LoggingInterceptor } from "@logging/presentation";
  * - Otherwise, uses MongoLogger directly (synchronous logging)
  * - MqConsumerService runs in background to consume and persist logs
  */
-@Global()
-@Module({
-  providers: [
+
+const storageType = process.env.STORAGE_TYPE || "mongodb";
+
+const providers: Provider[] = [
+  ContextService,
+  LoggingService,
+  LoggingInterceptor,
+];
+
+if (storageType === "file") {
+  providers.push(FileLogger);
+  providers.push({
+    provide: LoggerPort,
+    useClass: FileLogger,
+  });
+} else if (storageType === "mongodb") {
+  providers.push(MongoConnectionClient, MongoLogger);
+  providers.push({
+    provide: LoggerPort,
+    useClass: MongoLogger,
+  });
+} else if (storageType === "kafka") {
+  providers.push(
     MongoConnectionClient,
-    // Kafka Infrastructure Clients (Initialization only)
+    MongoLogger,
     KafkaProducerClient,
     KafkaConsumerClient,
-    // MQ Producer Port (Kafka)
+    KafkaProducer,
     {
       provide: MqProducerPort,
-      useFactory: (
-        kafkaProducerClient: KafkaProducerClient,
-        configService: ConfigService,
-      ) => {
-        return new KafkaProducer(kafkaProducerClient, configService);
-      },
-      inject: [KafkaProducerClient, ConfigService],
+      useClass: KafkaProducer,
     },
-    // MongoLogger (used as fallback and by consumer)
-    MongoLogger,
-    // LoggerPort: MQ adapter if enabled, otherwise direct MongoLogger
     {
       provide: LoggerPort,
-      useFactory: (
-        kafkaProducer: MqProducerPort,
-        mongoLogger: MongoLogger,
-        configService: ConfigService,
-      ) => {
-        const mqEnabled = configService.get<string>("MQ_ENABLED") === "true";
-        if (mqEnabled) {
-          return new KafkaLogger(kafkaProducer, mongoLogger, configService);
-        }
-        return mongoLogger;
-      },
+      useFactory: (producer, mongo, config) =>
+        new KafkaLogger(producer, mongo, config),
       inject: [MqProducerPort, MongoLogger, ConfigService],
     },
-    // MQ Consumer Service (background worker)
-    {
-      provide: MqConsumerService,
-      useFactory: (
-        kafkaConsumerClient: KafkaConsumerClient,
-        mongoLogger: MongoLogger,
-        configService: ConfigService,
-      ) => {
-        return new MqConsumerService(
-          kafkaConsumerClient,
-          mongoLogger,
-          configService,
-        );
-      },
-      inject: [KafkaConsumerClient, MongoLogger, ConfigService],
-    },
-    ContextService,
-    LoggingService,
-    LoggingInterceptor,
-  ],
+    MqConsumerService,
+  );
+}
+
+@Global()
+@Module({
+  providers: providers,
   exports: [LoggingService, ContextService, LoggingInterceptor],
 })
 export class LoggingModule {}

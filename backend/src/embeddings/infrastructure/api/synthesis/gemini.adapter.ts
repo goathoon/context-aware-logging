@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { SynthesisPort } from "@embeddings/out-ports";
 import { QueryMetadata } from "@embeddings/dtos";
 import { GeminiClient } from "./gemini.client";
-import { AnalysisResult } from "@embeddings/domain";
+import { AnalysisResult } from "@embeddings/dtos";
 import {
   QueryMetadataSynthesisPrompt,
   SemanticSynthesisPrompt,
@@ -92,17 +92,14 @@ export class GeminiAdapter extends SynthesisPort {
         `Statistical analysis result: ${JSON.stringify(parsed)}`,
       );
 
-      // Use initial metadata as fallback if LLM didn't provide time range
       let finalMetadata = parsed.params?.metadata || {};
       if (initialMetadata) {
-        // Prefer initial metadata for time range (more accurate)
         if (initialMetadata.startTime && !finalMetadata.startTime) {
           finalMetadata.startTime = initialMetadata.startTime.toISOString();
         }
         if (initialMetadata.endTime && !finalMetadata.endTime) {
           finalMetadata.endTime = initialMetadata.endTime.toISOString();
         }
-        // Merge other metadata fields if not provided by LLM
         if (!finalMetadata.service && initialMetadata.service) {
           finalMetadata.service = initialMetadata.service;
         }
@@ -120,7 +117,6 @@ export class GeminiAdapter extends SynthesisPort {
         }
       }
 
-      // Convert ISO strings to Date objects
       if (finalMetadata.startTime) {
         finalMetadata.startTime = new Date(finalMetadata.startTime);
       }
@@ -137,7 +133,6 @@ export class GeminiAdapter extends SynthesisPort {
       };
     } catch (error) {
       this.logger.error(`Statistical analysis failed: ${error.message}`);
-      // Use initial metadata in fallback if available
       const fallbackMetadata = initialMetadata
         ? {
             startTime: initialMetadata.startTime?.toISOString() || null,
@@ -175,7 +170,6 @@ export class GeminiAdapter extends SynthesisPort {
     history: any[] = [],
   ): Promise<{ answer: string; confidence: number }> {
     try {
-      // Check if contexts is aggregation results or regular log contexts
       const isAggregationResult =
         contexts &&
         typeof contexts === "object" &&
@@ -219,7 +213,6 @@ export class GeminiAdapter extends SynthesisPort {
       const response = await result.response;
       const text = response.text();
 
-      // Simple parsing of the expected format
       const answerMatch = text.match(
         /Answer:\s*([\s\S]*?)(?=\nConfidence:|$)/i,
       );
@@ -243,12 +236,10 @@ export class GeminiAdapter extends SynthesisPort {
     history: AnalysisResult[],
   ): Promise<string> {
     try {
-      // If no history, return original query
       if (!history || history.length === 0) {
         return query;
       }
 
-      // Use recent history (last 5 turns) for context
       const recentHistory = history.slice(-5);
 
       this.logger.debug(
@@ -267,7 +258,6 @@ export class GeminiAdapter extends SynthesisPort {
       const response = await result.response;
       const reformulated = response.text().trim();
 
-      // If reformulation failed or returned empty, use original query
       if (!reformulated || reformulated.length === 0) {
         this.logger.warn(
           `Query reformulation returned empty, using original query`,
@@ -275,7 +265,6 @@ export class GeminiAdapter extends SynthesisPort {
         return query;
       }
 
-      // Log if query was actually changed
       if (reformulated !== query) {
         this.logger.log(`Query reformulated: "${query}" → "${reformulated}"`);
       }
@@ -351,11 +340,11 @@ export class GeminiAdapter extends SynthesisPort {
       const response = await result.response;
       const text = response.text();
 
-      // Parse JSON response
       let parsed: any;
       try {
-        // Try to extract JSON from markdown code blocks if present
-        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+        const jsonMatch =
+          text.match(/```json\s*([\s\S]*?)\s*```/) ||
+          text.match(/```\s*([\s\S]*?)\s*```/);
         const jsonText = jsonMatch ? jsonMatch[1] : text;
         parsed = JSON.parse(jsonText.trim());
       } catch (parseError) {
@@ -397,7 +386,6 @@ export class GeminiAdapter extends SynthesisPort {
         `Grounding verification failed: ${error.message}`,
         error.stack,
       );
-      // On error, return conservative verification result
       return {
         status: "NOT_VERIFIED",
         confidenceAdjustment: 0.3,

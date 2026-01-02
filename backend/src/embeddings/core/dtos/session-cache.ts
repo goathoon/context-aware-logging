@@ -1,17 +1,7 @@
-import { AnalysisResult } from "@embeddings/domain";
+import { AnalysisResult } from "./analysis-result";
 
-export abstract class SessionCacheDto {
+export interface SessionCacheDto {
   history: AnalysisResult[];
   lastAccessed: Date;
   ttl: number;
-}
-
-// Map<string, SessionCacheDto>();
-export abstract class ActiveSessionCacheDto extends Map<
-  string,
-  SessionCacheDto
-> {
-  constructor() {
-    super();
-  }
 }

@@ -1,31 +1,28 @@
-import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
-import { ChatHistoryPort } from "@embeddings/out-ports";
-import { AnalysisResult } from "@embeddings/domain";
-import { SessionCacheDto } from "@embeddings/dtos";
-/**
- * Session data stored in memory cache.
- */
+import { Injectable, Logger } from "@nestjs/common";
+import { ChatHistoryPort, SessionCachePort } from "@embeddings/out-ports";
+import { SessionCacheDto, AnalysisResult } from "@embeddings/dtos";
 
 /**
- * SessionCacheService - Manages active session history in memory with TTL.
+ * SessionCacheService - Manages active session history with TTL.
  *
  * This service provides fast access to session history for active conversations
  * while falling back to database for inactive sessions.
  *
  * Phase 4: In-memory caching (single instance)
  * Phase 5: Can be extended to Redis for distributed environments
+ *
+ * Note: Resource management (cleanup intervals, cache clearing) is handled by
+ * the SessionCachePort adapter implementation.
  */
 @Injectable()
-export class SessionCacheService implements OnModuleDestroy {
+export class SessionCacheService {
   private readonly logger = new Logger(SessionCacheService.name);
-  private readonly activeSessions = new Map<string, SessionCacheDto>();
   private readonly defaultTtl = 30 * 60 * 1000; // 30 minutes
-  private cleanupInterval: NodeJS.Timeout | null = null;
 
-  constructor(private readonly chatHistoryPort: ChatHistoryPort) {
-    // Start periodic cleanup of expired sessions
-    this.startCleanupInterval();
-  }
+  constructor(
+    private readonly chatHistoryPort: ChatHistoryPort,
+    private readonly sessionCachePort: SessionCachePort,
+  ) {}
 
   /**
    * Retrieves session history with cache-first strategy.
@@ -35,24 +32,21 @@ export class SessionCacheService implements OnModuleDestroy {
    * @returns Session history
    */
   async getHistory(sessionId: string): Promise<AnalysisResult[]> {
-    // 1. Check cache first
-    const cached = this.activeSessions.get(sessionId);
+    const cached = await this.sessionCachePort.get(sessionId);
     if (cached && !this.isExpired(cached)) {
-      // Update last accessed time
       cached.lastAccessed = new Date();
+      await this.sessionCachePort.set(sessionId, cached);
       this.logger.debug(
         `Cache hit for session ${sessionId} (${cached.history.length} messages)`,
       );
       return cached.history;
     }
 
-    // 2. Cache miss or expired → fetch from database
     this.logger.debug(`Cache miss for session ${sessionId}, fetching from DB`);
     const history = await this.chatHistoryPort.findBySessionId(sessionId);
 
-    // 3. If session has history, cache it
     if (history.length > 0) {
-      this.activeSessions.set(sessionId, {
+      await this.sessionCachePort.set(sessionId, {
         history,
         lastAccessed: new Date(),
         ttl: this.defaultTtl,
@@ -75,20 +69,18 @@ export class SessionCacheService implements OnModuleDestroy {
     sessionId: string,
     result: AnalysisResult,
   ): Promise<void> {
-    // 1. Persist to database
     await this.chatHistoryPort.save(result);
 
-    // 2. Update cache if exists
-    const cached = this.activeSessions.get(sessionId);
+    const cached = await this.sessionCachePort.get(sessionId);
     if (cached) {
       cached.history.push(result);
       cached.lastAccessed = new Date();
+      await this.sessionCachePort.set(sessionId, cached);
       this.logger.debug(
         `Updated cache for session ${sessionId} (now ${cached.history.length} messages)`,
       );
     } else {
-      // 3. If not cached, cache the new result
-      this.activeSessions.set(sessionId, {
+      await this.sessionCachePort.set(sessionId, {
         history: [result],
         lastAccessed: new Date(),
         ttl: this.defaultTtl,
@@ -102,8 +94,9 @@ export class SessionCacheService implements OnModuleDestroy {
    *
    * @param sessionId Session ID to invalidate
    */
-  invalidateSession(sessionId: string): void {
-    if (this.activeSessions.delete(sessionId)) {
+  async invalidateSession(sessionId: string): Promise<void> {
+    const deleted = await this.sessionCachePort.delete(sessionId);
+    if (deleted) {
       this.logger.debug(`Invalidated cache for session ${sessionId}`);
     }
   }
@@ -118,65 +111,22 @@ export class SessionCacheService implements OnModuleDestroy {
   }
 
   /**
-   * Starts periodic cleanup of expired sessions.
-   */
-  private startCleanupInterval(): void {
-    // Cleanup every 5 minutes
-    this.cleanupInterval = setInterval(
-      () => {
-        this.cleanupExpiredSessions();
-      },
-      5 * 60 * 1000,
-    );
-  }
-
-  /**
-   * Removes expired sessions from cache.
-   */
-  private cleanupExpiredSessions(): void {
-    const now = new Date();
-    let removedCount = 0;
-
-    for (const [sessionId, session] of this.activeSessions.entries()) {
-      if (this.isExpired(session)) {
-        this.activeSessions.delete(sessionId);
-        removedCount++;
-      }
-    }
-
-    if (removedCount > 0) {
-      this.logger.log(
-        `Cleaned up ${removedCount} expired sessions. Active sessions: ${this.activeSessions.size}`,
-      );
-    }
-  }
-
-  /**
    * Gets statistics about the cache.
    */
-  getCacheStats(): {
+  async getCacheStats(): Promise<{
     activeSessions: number;
     totalMessages: number;
-  } {
-    const totalMessages = Array.from(this.activeSessions.values()).reduce(
+  }> {
+    const values = await this.sessionCachePort.values();
+    const totalMessages = values.reduce(
       (sum, session) => sum + session.history.length,
       0,
     );
+    const activeSessions = await this.sessionCachePort.size();
 
     return {
-      activeSessions: this.activeSessions.size,
+      activeSessions,
       totalMessages,
     };
-  }
-
-  /**
-   * Cleanup on module destroy.
-   */
-  onModuleDestroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
-    this.logger.log("SessionCacheService destroyed");
   }
 }
