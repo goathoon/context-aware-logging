@@ -8,7 +8,7 @@
 
 export interface Chunk {
   text: string;
-  metadata?: Record<string, any>;
+  _metadata?: Record<string, any>;
 }
 
 /**
@@ -29,16 +29,16 @@ export interface Chunk {
  * ]
  */
 export function chunkSummary(
-  summary: string,
+  _summary: string,
   maxChunkLength: number = 200,
 ): Chunk[] {
   // If summary is short enough, return as single chunk
-  if (summary.length <= maxChunkLength) {
-    return [{ text: summary }];
+  if (_summary.length <= maxChunkLength) {
+    return [{ text: _summary }];
   }
 
   // Split by comma and space to preserve semantic meaning
-  const parts = summary.split(", ").filter((part) => part.trim().length > 0);
+  const parts = _summary.split(", ").filter((part) => part.trim().length > 0);
   const chunks: Chunk[] = [];
   let currentChunk = "";
 
@@ -79,25 +79,25 @@ export function chunkSummary(
  * @returns Array of overlapping chunks
  */
 export function createOverlappingChunks(
-  summary: string,
+  _summary: string,
   chunkLength: number = 150,
   overlapSize: number = 30,
 ): Chunk[] {
-  if (summary.length <= chunkLength) {
-    return [{ text: summary }];
+  if (_summary.length <= chunkLength) {
+    return [{ text: _summary }];
   }
 
   const chunks: Chunk[] = [];
   let start = 0;
 
-  while (start < summary.length) {
-    const end = Math.min(start + chunkLength, summary.length);
-    const chunk = summary.substring(start, end);
+  while (start < _summary.length) {
+    const end = Math.min(start + chunkLength, _summary.length);
+    const chunk = _summary.substring(start, end);
     chunks.push({ text: chunk.trim() });
 
     // Move start position forward, accounting for overlap
     start = end - overlapSize;
-    if (start >= summary.length) {
+    if (start >= _summary.length) {
       break;
     }
   }
@@ -109,7 +109,7 @@ export function createOverlappingChunks(
  * Splits a summary by semantic fields (Outcome, Service, Error, etc.).
  * Each field becomes a separate chunk, allowing for more granular search.
  *
- * @param summary The structured summary string
+ * @param _summary The structured summary string
  * @returns Array of field-based chunks
  *
  * @example
@@ -120,15 +120,15 @@ export function createOverlappingChunks(
  *   { text: "Error: GATEWAY_TIMEOUT", metadata: { field: "error" } }
  * ]
  */
-export function chunkByFields(summary: string): Chunk[] {
-  const parts = summary.split(", ").filter((part) => part.trim().length > 0);
+export function chunkByFields(_summary: string): Chunk[] {
+  const parts = _summary.split(", ").filter((part) => part.trim().length > 0);
   return parts.map((part) => {
     const colonIndex = part.indexOf(":");
     if (colonIndex > 0) {
       const field = part.substring(0, colonIndex).toLowerCase();
       return {
         text: part.trim(),
-        metadata: { field },
+        _metadata: { field },
       };
     }
     return { text: part.trim() };
@@ -138,11 +138,13 @@ export function chunkByFields(summary: string): Chunk[] {
 /**
  * Determines if a summary should be chunked based on length and complexity.
  *
- * @param summary The structured summary string
+ * @param _summary The structured summary string
  * @param threshold Length threshold for chunking (default: 200)
  * @returns true if chunking is recommended
  */
-export function shouldChunk(summary: string, threshold: number = 200): boolean {
-  return summary.length > threshold;
+export function shouldChunk(
+  _summary: string,
+  threshold: number = 200,
+): boolean {
+  return _summary.length > threshold;
 }
-

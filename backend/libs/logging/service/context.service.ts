@@ -56,4 +56,12 @@ export class ContextService {
   addPerformance(performance: { durationMs: number }): void {
     this.updateContext({ performance });
   }
+
+  /**
+   * Dynamically update the service field.
+   * Use this when an error occurs in a downstream service to track which step failed.
+   */
+  setService(service: string): void {
+    this.updateContext({ service });
+  }
 }

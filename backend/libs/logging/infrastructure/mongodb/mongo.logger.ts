@@ -30,6 +30,7 @@ export class MongoLogger extends LoggerPort {
       const document = {
         ...event,
         timestamp: new Date(event.timestamp),
+        _metadata: _metadata,
         _summary: _summary,
       };
 

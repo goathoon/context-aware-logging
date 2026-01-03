@@ -17,6 +17,7 @@ import {
 import { LoggerPort } from "@logging/out-ports";
 import { MqProducerPort } from "@logging/out-ports";
 import { LoggingInterceptor } from "@logging/presentation";
+import { SamplingPolicy } from "@logging/domain";
 
 /**
  * LoggingModule - NestJS module for the logging library.
@@ -34,6 +35,7 @@ const storageType = process.env.STORAGE_TYPE || "mongodb";
 
 const providers: Provider[] = [
   ContextService,
+  SamplingPolicy,
   LoggingService,
   LoggingInterceptor,
 ];

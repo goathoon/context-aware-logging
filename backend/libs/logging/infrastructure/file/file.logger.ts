@@ -20,8 +20,6 @@ export class FileLogger
 
   constructor(private readonly configService: ConfigService) {
     super();
-    // Resolve log file path relative to project root (backend/)
-    // projectRoot is now initialized once in ConfigModule
     const projectRoot = this.configService.get<string>("paths.projectRoot");
 
     if (!projectRoot) {
@@ -61,11 +59,8 @@ export class FileLogger
     try {
       const jsonLine = JSON.stringify(event) + "\n";
 
-      // Use fs.appendFile for reliability in Phase 1
-      // It handles opening, appending, and flushing correctly
       await fs.appendFile(this.logFilePath, jsonLine, "utf8");
     } catch {
-      // Logging failures should not break the application
       // Silently fail - in production, you might want to emit to a fallback logger or metrics
     }
   }

@@ -76,10 +76,6 @@ export class WideEvent {
   @Type(() => WideEventPerformance)
   public performance?: WideEventPerformance;
 
-  @IsOptional()
-  @IsObject()
-  public metadata?: Record<string, any>;
-
   constructor(partial: Partial<WideEvent>) {
     Object.assign(this, partial);
   }

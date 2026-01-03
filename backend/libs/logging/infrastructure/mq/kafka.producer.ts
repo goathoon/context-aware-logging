@@ -27,14 +27,12 @@ export class KafkaProducer extends MqProducerPort {
   }
 
   async connect(): Promise<void> {
-    // Connection is managed by KafkaProducerClient
     if (!this.kafkaProducerClient.isProducerConnected()) {
       await this.kafkaProducerClient.connect();
     }
   }
 
   async disconnect(): Promise<void> {
-    // Connection is managed by KafkaProducerClient
     await this.kafkaProducerClient.disconnect();
   }
 
@@ -50,7 +48,7 @@ export class KafkaProducer extends MqProducerPort {
     try {
       const message = {
         event,
-        metadata: metadata || {},
+        _metadata: metadata || {},
         summary,
         timestamp: new Date().toISOString(),
       };

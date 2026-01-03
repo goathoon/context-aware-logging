@@ -402,19 +402,13 @@ Step 5에서 Grounding Verification을 Semantic Caching보다 우선하여 구�
 - **Redis 기반 캐싱 (Phase 5)**
   - 분산 환경 지원 및 세션 공유
 
-- **프롬프트 버전 관리 및 A/B 테스트 (Phase 5)**
-  - 프롬프트 성능 모니터링 및 개선
-
-- **다국어 Narrative 생성 지원**
-  - 현재 영어로만 생성되는 Narrative Layer를 다국어로 확장
-
 ---
 
 ## 8. 추가 인사이트
 
 ### 8.1 Grounding의 중요성
 
-Phase 3에서 `eventId`를 보존한 결정이 Phase 4에서 Grounding Verification 구현 시 핵심이 되었습니다. AI 기반 분석 결과가 항상 원본 로그라는 팩트로 되돌아갈 수 있는 강한 연결 고리를 확보한 것이 중요했습니다.
+Phase 3에서 `requestId`를 보존한 결정이 Phase 4에서 Grounding Verification 구현 시 핵심이 되었습니다. AI 기반 분석 결과가 항상 원본 로그라는 팩트로 되돌아갈 수 있는 강한 연결 고리를 확보한 것이 중요했습니다.
 
 ### 8.2 Template-driven 접근의 가치
 

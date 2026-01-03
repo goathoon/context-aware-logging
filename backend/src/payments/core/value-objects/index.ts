@@ -1,1 +1,1 @@
-export * from './payment-errors.vo';
+export * from "./payment-status.vo";

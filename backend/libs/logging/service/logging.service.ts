@@ -1,6 +1,12 @@
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { LoggerPort } from "@logging/out-ports";
-import { WideEvent, LoggingContext, Latency } from "@logging/domain";
+import {
+  WideEvent,
+  LoggingContext,
+  Latency,
+  SamplingPolicy,
+  SamplingReason,
+} from "@logging/domain";
 import { ContextService } from "./context.service";
 import { LatencyBucket } from "@logging/value-objects";
 
@@ -10,9 +16,12 @@ import { LatencyBucket } from "@logging/value-objects";
  */
 @Injectable()
 export class LoggingService implements OnModuleDestroy {
+  private readonly serviceLogger = new Logger(LoggingService.name);
+
   constructor(
     private readonly contextService: ContextService,
     private readonly logger: LoggerPort,
+    private readonly samplingPolicy: SamplingPolicy,
   ) {}
 
   /**
@@ -66,11 +75,33 @@ export class LoggingService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Dynamically update the service field.
+   * Use this when processing moves to a different logical service boundary
+   * or when an error occurs in a downstream service.
+   *
+   * @example
+   * // In payments flow: payments -> paymentGateway -> orders
+   * loggingService.setService('paymentGateway');
+   * const result = await callExternalGateway();
+   * if (!result.success) {
+   *   loggingService.addError({ code: 'GATEWAY_TIMEOUT', message: '...' });
+   *   // Error will be logged under 'paymentGateway' service
+   * }
+   */
+  setService(service: string): void {
+    this.contextService.setService(service);
+  }
+
   private finalizedRequestIds = new Set<string>();
 
   /**
    * Finalize and flush the current request's Wide Event.
    * This should be called once per request, even on error or early return.
+   *
+   * Phase 5: Applies sampling policy before persisting.
+   * - Errors and slow requests are always recorded (100% retention).
+   * - Normal requests are sampled based on configured rate.
    */
   async finalize(explicitContext?: LoggingContext): Promise<void> {
     const context = explicitContext || this.contextService.getContext();
@@ -91,6 +122,17 @@ export class LoggingService implements OnModuleDestroy {
       idsToRemove.forEach((id) => this.finalizedRequestIds.delete(id));
     }
 
+    // Phase 5: Apply sampling policy
+    const samplingDecision = this.samplingPolicy.shouldRecord(context);
+
+    if (!samplingDecision.shouldRecord) {
+      // Log sampling decision for monitoring (debug level in production)
+      this.serviceLogger.debug(
+        `Request ${context.requestId} not sampled: ${samplingDecision.reason}`,
+      );
+      return;
+    }
+
     // Create a validated WideEvent instance
     const event = new WideEvent({
       requestId: context.requestId,
@@ -100,16 +142,24 @@ export class LoggingService implements OnModuleDestroy {
       user: context.user as any,
       error: context.error as any,
       performance: context.performance,
-      metadata: context._metadata,
     });
 
     // Phase 3: Generate deterministic summary and embedding status
     const _summary = this.generateSummary(context);
 
+    // Add sampling reason to metadata for auditing/debugging
+    const enrichedMetadata = {
+      ...context._metadata,
+      _sampling: {
+        recorded: true,
+        reason: samplingDecision.reason,
+      },
+    };
+
     // We pass the core event plus internal processing fields to the logger.
     // This preserves the WideEvent domain model while allowing infrastructure
     // to store semantic enrichment data.
-    await this.logger.log(event, context._metadata, _summary);
+    await this.logger.log(event, enrichedMetadata, _summary);
   }
 
   /**
