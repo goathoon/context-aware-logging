@@ -38,9 +38,10 @@ export class MongoChatHistoryAdapter extends ChatHistoryPort {
         question: doc.question,
         intent: doc.intent as AnalysisIntent,
         answer: doc.answer,
-        sources: doc.sources || (doc.source ? [doc.source] : []),
+        sources: doc.sources || [],
         confidence: doc.confidence,
         sessionId: doc.sessionId,
+        createdAt: doc.createdAt,
       }));
     } catch (error) {
       this.logger.error(

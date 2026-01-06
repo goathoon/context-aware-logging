@@ -17,9 +17,15 @@
 
       "@embeddings": ["src/embeddings/embeddings.module"],
       "@embeddings/domain": ["src/embeddings/core/domain/index"],
+      "@embeddings/domain/prompts": [
+        "src/embeddings/core/domain/prompts/index"
+      ],
+      "@embeddings/domain/prompts/implementations": [
+        "src/embeddings/core/domain/prompts/implementations/index"
+      ],
       "@embeddings/value-objects": ["src/embeddings/core/value-objects/index"],
-      "@embeddings/value-objects/prompts": [
-        "src/embeddings/core/value-objects/prompts/index"
+      "@embeddings/value-objects/fallbacks/prompts": [
+        "src/embeddings/core/value-objects/fallbacks/prompts/index"
       ],
       "@embeddings/value-objects/filter": [
         "src/embeddings/core/value-objects/filter/index"

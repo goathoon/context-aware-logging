@@ -43,7 +43,8 @@ import {
   HistorySummarizationSynthesisPrompt,
   StatisticalAnalysisPrompt,
   GroundingVerificationPrompt,
-} from "@embeddings/value-objects/prompts";
+  LogStyleTransformationPrompt,
+} from "@embeddings/domain/prompts";
 
 @Module({
   controllers: [EmbeddingController, SearchController],
@@ -90,6 +91,13 @@ import {
       provide: GroundingVerificationPrompt,
       useFactory: (registry: PromptTemplateRegistry) => {
         return new GroundingVerificationPrompt(registry);
+      },
+      inject: [PromptTemplateRegistry],
+    },
+    {
+      provide: LogStyleTransformationPrompt,
+      useFactory: (registry: PromptTemplateRegistry) => {
+        return new LogStyleTransformationPrompt(registry);
       },
       inject: [PromptTemplateRegistry],
     },

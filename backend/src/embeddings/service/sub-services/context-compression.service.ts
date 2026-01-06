@@ -56,6 +56,7 @@ export class ContextCompressionService {
       sources: this.extractSourcesFromHistory(old),
       confidence: 0.8,
       sessionId: recent[0]?.sessionId || "",
+      createdAt: new Date(),
     };
 
     // Return summary + recent turns

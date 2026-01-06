@@ -1,6 +1,6 @@
 import { PromptTemplate } from "../prompt-template.vo";
 import { PromptTemplateRegistry } from "../prompt-template-registry";
-import { QUERY_METADATA_SYNTHESIS_FALLBACK } from "./fallbacks";
+import { QUERY_METADATA_SYNTHESIS_FALLBACK } from "src/embeddings/core/value-objects/fallbacks/prompts";
 /**
  * QueryMetadataSynthesisPrompt - Query metadata extraction prompt template
  *

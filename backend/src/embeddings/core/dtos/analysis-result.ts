@@ -6,4 +6,5 @@ export interface AnalysisResult {
   answer: string;
   sources: string[]; // List of requestIds used as evidence
   confidence: number;
+  createdAt?: Date;
 }

@@ -55,12 +55,6 @@ export class MqConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    const mqEnabled = this.configService.get<string>("MQ_ENABLED") === "true";
-    if (!mqEnabled) {
-      this.logger.log("MQ is disabled. Consumer service will not start.");
-      return;
-    }
-
     await this.start();
   }
 
@@ -74,11 +68,9 @@ export class MqConsumerService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      // Connect using client
       await this.ConsumerClient.connect();
       this.consumer = this.ConsumerClient.getConsumer();
 
-      // Subscribe to topic (business logic - done by service)
       await this.consumer.subscribe({
         topic: this.topic,
         fromBeginning: false,
@@ -89,8 +81,13 @@ export class MqConsumerService implements OnModuleInit, OnModuleDestroy {
         `Started MQ consumer for topic: ${this.topic}, group: ${this.ConsumerClient.getGroupId()}`,
       );
 
-      // Start consuming messages
-      await this.consume();
+      this.consume().catch((error) => {
+        this.logger.error(
+          `MQ Consumer runtime error: ${error.message}`,
+          error.stack,
+        );
+        this.isRunning = false;
+      });
     } catch (error) {
       this.logger.error(
         `Failed to start MQ consumer: ${error.message}`,
@@ -106,27 +103,59 @@ export class MqConsumerService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.isRunning = false;
-
-    // Process remaining batch before shutdown
-    if (this.batch.length > 0) {
-      this.logger.log(
-        `Processing final batch of ${this.batch.length} events before shutdown`,
-      );
-      await this.processBatch(this.batch);
-      this.batch = [];
-    }
-
-    if (this.batchTimeout) {
-      clearTimeout(this.batchTimeout);
-      this.batchTimeout = null;
-    }
+    this.logger.log("Graceful shutdown initiated: Stopping MQ consumer...");
 
     try {
+      // 1. Stop fetching new messages first to prevent batch from growing
+      // Use a timeout for safety
+      if (this.consumer) {
+        this.logger.log("Stopping consumer fetcher...");
+        await Promise.race([
+          this.consumer.stop(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Consumer stop timeout")), 5000),
+          ),
+        ]).catch((err) =>
+          this.logger.warn(`Consumer stop failed or timed out: ${err.message}`),
+        );
+      }
+
+      // 2. Clear timeout immediately to avoid redundant batch processing
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout);
+        this.batchTimeout = null;
+      }
+
+      // 3. Process remaining batch before shutdown with timeout
+      if (this.batch.length > 0) {
+        this.logger.log(
+          `Processing final batch of ${this.batch.length} events before shutdown`,
+        );
+        const batchToProcess = [...this.batch];
+        this.batch = [];
+
+        await Promise.race([
+          this.processBatch(batchToProcess),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Final batch processing timeout")),
+              5000,
+            ),
+          ),
+        ]).catch((err) =>
+          this.logger.warn(
+            `Final batch processing failed or timed out: ${err.message}`,
+          ),
+        );
+      }
+
+      // 4. Finally disconnect from Kafka
+      this.logger.log("Disconnecting from Kafka...");
       await this.ConsumerClient.disconnect();
-      this.logger.log("MQ consumer stopped");
+      this.logger.log("MQ consumer stopped successfully");
     } catch (error) {
       this.logger.error(
-        `Error stopping consumer: ${error.message}`,
+        `Error during MQ consumer graceful shutdown: ${error.message}`,
         error.stack,
       );
     }

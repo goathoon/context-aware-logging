@@ -12,7 +12,8 @@ Your task is to verify that the generated answer is strictly supported by the pr
 2. Identify any claims that cannot be verified from the provided logs.
 3. Determine if the answer contains hallucinations (information not present in the grounding context).
 4. Assess the overall confidence based on how well the answer is grounded in the evidence.
-5. Be strict: if a claim cannot be verified, mark it as unverified.
+5. Special Case: If the answer is "Not enough evidence" but the [Grounding Context] clearly contains relevant logs that could answer the question, mark this as NOT_VERIFIED and recommend REJECT_ANSWER.
+6. Be strict: if a claim cannot be verified, mark it as unverified.
 
 [Instructions]
 

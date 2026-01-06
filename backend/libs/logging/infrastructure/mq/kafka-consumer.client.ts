@@ -47,13 +47,16 @@ export class KafkaConsumerClient implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async onModuleInit(): Promise<void> {
-    // Note: Connection is managed by the service using this client
-    // Consumer connection typically happens when subscribing to topics
-  }
+  async onModuleInit(): Promise<void> {}
 
   async onModuleDestroy(): Promise<void> {
-    await this.disconnect();
+    // If it's still connected, the service might have failed to close it or wasn't used.
+    if (this.isConnected) {
+      this.logger.log(
+        "onModuleDestroy: Forcefully disconnecting Kafka consumer client...",
+      );
+      await this.disconnect();
+    }
   }
 
   /**
@@ -86,9 +89,11 @@ export class KafkaConsumerClient implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      this.logger.log("Disconnecting Kafka consumer...");
+      // consumer.disconnect() internally calls consumer.stop()
       await this.consumer.disconnect();
       this.isConnected = false;
-      this.logger.log("Disconnected from Kafka consumer");
+      this.logger.log("Disconnected from Kafka consumer successfully");
     } catch (error) {
       this.logger.error(
         `Error disconnecting from Kafka consumer: ${error.message}`,

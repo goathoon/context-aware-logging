@@ -10,7 +10,8 @@ import {
   HistorySummarizationSynthesisPrompt,
   StatisticalAnalysisPrompt,
   GroundingVerificationPrompt,
-} from "@embeddings/value-objects/prompts";
+  LogStyleTransformationPrompt,
+} from "src/embeddings/core/domain/prompts/implementations";
 
 /**
  * GeminiAdapter - Adapter that performs actual Gemini API operations
@@ -28,6 +29,7 @@ export class GeminiAdapter extends SynthesisPort {
     private readonly historySummarizationPrompt: HistorySummarizationSynthesisPrompt,
     private readonly statisticalAnalysisPrompt: StatisticalAnalysisPrompt,
     private readonly groundingVerificationPrompt: GroundingVerificationPrompt,
+    private readonly logStyleTransformationPrompt: LogStyleTransformationPrompt,
   ) {
     super();
   }
@@ -168,6 +170,7 @@ export class GeminiAdapter extends SynthesisPort {
     query: string,
     contexts: any[] | { aggregationResults?: any; contextLogs?: any[] },
     history: any[] = [],
+    targetLanguage?: "Korean" | "English",
   ): Promise<{ answer: string; confidence: number }> {
     try {
       const isAggregationResult =
@@ -201,12 +204,18 @@ export class GeminiAdapter extends SynthesisPort {
       }
 
       const historyText = SemanticSynthesisPrompt.formatHistory(history);
+      const detectedLanguage = targetLanguage || this.detectLanguage(query);
       const prompt = this.semanticPrompt.build({
         query,
         contextText,
         historyText,
         isAggregation: isAggregationResult,
+        detectedLanguage,
       });
+
+      this.logger.debug(
+        `Language for synthesis: ${detectedLanguage} (Forced: ${!!targetLanguage})`,
+      );
 
       const model = this.geminiClient.getModel();
       const result = await model.generateContent(prompt);
@@ -394,5 +403,40 @@ export class GeminiAdapter extends SynthesisPort {
         reasoning: `Verification error: ${error.message}`,
       };
     }
+  }
+
+  async transformQueryToLogStyle(query: string): Promise<string> {
+    try {
+      this.logger.log(`Transforming query to log-style narrative: "${query}"`);
+      const prompt = this.logStyleTransformationPrompt.build({ query });
+
+      const model = this.geminiClient.getModel();
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const transformed = response.text().trim();
+
+      if (!transformed || transformed.length === 0) {
+        this.logger.warn(
+          `Log-style transformation returned empty, using original query`,
+        );
+        return query;
+      }
+
+      this.logger.log(`Query transformed to log-style: "${transformed}"`);
+      return transformed;
+    } catch (error) {
+      this.logger.error(
+        `Log-style transformation failed: ${error.message}, using original query`,
+      );
+      return query;
+    }
+  }
+
+  /**
+   * Simple language detection based on character sets.
+   */
+  detectLanguage(text: string): "Korean" | "English" {
+    const koreanRegex = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/;
+    return koreanRegex.test(text) ? "Korean" : "English";
   }
 }

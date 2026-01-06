@@ -85,9 +85,12 @@ export class KafkaProducerClient implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      this.logger.log(
+        "Graceful shutdown: Disconnecting Kafka Producer (flushing pending messages)...",
+      );
       await this.producer.disconnect();
       this.isConnected = false;
-      this.logger.log("Disconnected from Kafka");
+      this.logger.log("Disconnected from Kafka successfully");
     } catch (error) {
       this.logger.error(
         `Error disconnecting from Kafka: ${error.message}`,

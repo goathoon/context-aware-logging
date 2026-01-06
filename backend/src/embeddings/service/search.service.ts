@@ -62,14 +62,43 @@ export class SearchService extends SearchUseCase {
           `Retrieved ${history.length} history turns for session ${sessionId}`,
         );
       }
+
+      // 1. Anchor the original language
+      const originalLanguage = this.synthesisPort.detectLanguage(query);
+
       const intent = this.classifyIntent(query);
       this.logger.log(`Detected intent: ${intent}`);
+
       if (intent === AnalysisIntent.CONVERSATIONAL) {
         this.logger.log(`Handling conversational query: "${query}"`);
+
+        // If history is empty, provide a default response
+        if (history.length === 0) {
+          const noHistoryAnswer =
+            originalLanguage === "Korean"
+              ? "이 세션에서 이전에 나눈 대화 내용이 없습니다."
+              : "I don't have any previous conversation records in this session.";
+
+          return {
+            question: query,
+            intent,
+            answer: noHistoryAnswer,
+            sources: [],
+            confidence: 1,
+            sessionId,
+            createdAt: new Date(),
+          };
+        }
+
+        // For conversational intent, use the most recent 10 raw messages for accuracy
+        // No need to compress as we are only looking at metadata about the conversation itself.
+        const recentHistory = history.slice(-10);
+
         const { answer, confidence } = await this.synthesisPort.synthesize(
           query,
           [],
-          history,
+          recentHistory,
+          originalLanguage,
         );
 
         const result: AnalysisResult = {
@@ -79,6 +108,7 @@ export class SearchService extends SearchUseCase {
           sources: [],
           confidence,
           sessionId,
+          createdAt: new Date(),
         };
 
         if (sessionId) {
@@ -92,34 +122,64 @@ export class SearchService extends SearchUseCase {
         history,
       );
 
-      const metadata =
-        await this.synthesisPort.extractMetadata(reformulatedQuery);
+      // 2. Safe Guard: If reformulation translated the query, fallback to original
+      const safeReformulatedQuery =
+        this.synthesisPort.detectLanguage(reformulatedQuery) !==
+        originalLanguage
+          ? query
+          : reformulatedQuery;
 
-      this.logger.log(
-        `Extracted metadata from reformulated query: ${JSON.stringify(metadata)}`,
-      );
+      if (safeReformulatedQuery !== reformulatedQuery) {
+        this.logger.warn(
+          `Reformulation translation detected! Falling back to original query to maintain language sovereignty.`,
+        );
+      }
 
+      const isStandalone = this.isStandaloneQuery(query, safeReformulatedQuery);
+      if (isStandalone) {
+        this.logger.log(
+          `Detected standalone query: "${query}" (History bypassed)`,
+        );
+      } else {
+        this.logger.log(
+          `Detected context-dependent query: "${query}" -> "${safeReformulatedQuery}"`,
+        );
+      }
+
+      // Construct compressedHistory ONLY for the RAG flow to save tokens and focus context
       const compressedHistory =
         history.length > 10
           ? await this.contextCompression.compressHistory(history)
           : history;
 
+      const metadata = await this.synthesisPort.extractMetadata(
+        safeReformulatedQuery,
+      );
+
+      this.logger.log(
+        `Extracted metadata from reformulated query: ${JSON.stringify(metadata)}`,
+      );
+
       if (intent === AnalysisIntent.STATISTICAL) {
         return await this.handleStatisticalQuery(
-          reformulatedQuery,
+          safeReformulatedQuery,
           metadata,
           compressedHistory,
           sessionId,
           query,
+          isStandalone,
+          originalLanguage,
         );
       }
 
       return await this.handleSemanticQuery(
-        reformulatedQuery,
+        safeReformulatedQuery,
         metadata,
         compressedHistory,
         sessionId,
         query,
+        isStandalone,
+        originalLanguage,
       );
     } catch (error) {
       this.logger.error(`RAG process failed: ${error.message}`, error.stack);
@@ -136,18 +196,25 @@ export class SearchService extends SearchUseCase {
     history: AnalysisResult[],
     sessionId?: string,
     originalQuery?: string,
+    isStandalone: boolean = false,
+    targetLanguage?: "Korean" | "English",
   ): Promise<AnalysisResult> {
     const intent = AnalysisIntent.SEMANTIC;
     const query = originalQuery || reformulatedQuery;
 
+    // Transform query to log-style narrative for better semantic matching
+    const logStyleQuery =
+      await this.synthesisPort.transformQueryToLogStyle(reformulatedQuery);
+
     const structuredQuery = this.queryPreprocessor.preprocessQuery(
-      reformulatedQuery,
+      logStyleQuery,
       metadata,
     );
 
     this.logger.log(
       `\n\n 
         Original query: "${query}" \n
+        -> Transformed query (log-style): "${logStyleQuery}" \n
         -> Structured query: "${structuredQuery}" \n`,
     );
 
@@ -163,12 +230,16 @@ export class SearchService extends SearchUseCase {
       metadata,
     );
 
-    if (vectorResults) {
+    if (vectorResults && vectorResults.length > 0) {
       this.logger.log(
         `Semantic cache hit! Using cached vector results (${vectorResults.length} results)`,
       );
     } else {
-      this.logger.log("Semantic cache miss, performing vector search");
+      this.logger.log(
+        vectorResults
+          ? `Semantic cache hit but empty results, performing vector search`
+          : `Semantic cache miss, performing vector search`,
+      );
       vectorResults = await this.logStoragePort.vectorSearch(
         embedding,
         10,
@@ -244,10 +315,17 @@ export class SearchService extends SearchUseCase {
 
     const requestIds = fullLogs.map((log) => log.requestId).filter(Boolean);
 
+    const synthesisHistory = isStandalone ? [] : history;
+
     const { answer, confidence } = await this.synthesisPort.synthesize(
       reformulatedQuery,
       fullLogs,
-      history,
+      synthesisHistory,
+      targetLanguage,
+    );
+
+    this.logger.log(
+      `Synthesized answer (raw): "${answer.substring(0, 100)}${answer.length > 100 ? "..." : ""}" (confidence: ${confidence})`,
     );
 
     let finalAnswer = answer;
@@ -294,13 +372,35 @@ export class SearchService extends SearchUseCase {
       sources: requestIds,
       confidence: finalConfidence,
       sessionId,
+      createdAt: new Date(),
     };
 
     if (sessionId) {
+      // For standalone queries, we update the session cache with the new result
+      // but we don't necessarily need the history for the NEXT standalone query.
       await this.sessionCache.updateSession(sessionId, result);
     }
 
     return result;
+  }
+
+  /**
+   * Detects if a query is standalone or depends on history.
+   * If reformulated query is essentially the same as original, it's likely standalone.
+   */
+  private isStandaloneQuery(original: string, reformulated: string): boolean {
+    const normOriginal = original.toLowerCase().trim().replace(/[?.!]/g, "");
+    const normReformulated = reformulated
+      .toLowerCase()
+      .trim()
+      .replace(/[?.!]/g, "");
+
+    // If they are very similar, consider it standalone
+    return (
+      normOriginal === normReformulated ||
+      normReformulated.includes(normOriginal) ||
+      normOriginal.length / normReformulated.length > 0.8
+    );
   }
 
   /**
@@ -312,6 +412,8 @@ export class SearchService extends SearchUseCase {
     history: AnalysisResult[],
     sessionId?: string,
     originalQuery?: string,
+    isStandalone: boolean = false,
+    targetLanguage?: "Korean" | "English",
   ): Promise<AnalysisResult> {
     const intent = AnalysisIntent.STATISTICAL;
     const query = originalQuery || reformulatedQuery;
@@ -334,23 +436,33 @@ export class SearchService extends SearchUseCase {
 
       let contextLogs: any[] = [];
       if (aggregationResults && aggregationResults.length > 0) {
-        const { embedding } =
-          await this.embeddingPort.createEmbedding(reformulatedQuery);
+        // Use log-style transformation for better context log retrieval
+        const logStyleQuery =
+          await this.synthesisPort.transformQueryToLogStyle(reformulatedQuery);
         const searchMetadata = params.metadata || metadata;
+        const structuredQuery = this.queryPreprocessor.preprocessQuery(
+          logStyleQuery,
+          searchMetadata,
+        );
+
+        const { embedding } =
+          await this.embeddingPort.createEmbedding(structuredQuery);
 
         contextLogs = this.semanticCache.getCachedResults(
           embedding,
           searchMetadata,
         );
 
-        if (contextLogs.length > 0) {
+        if (contextLogs && contextLogs.length > 0) {
           this.logger.log(
             `Semantic cache hit for statistical query context logs (${contextLogs.length} results)`,
           );
           contextLogs = contextLogs.slice(0, 5);
         } else {
           this.logger.log(
-            "Semantic cache miss for statistical query, performing vector search",
+            contextLogs
+              ? `Semantic cache hit but empty results for statistical query, performing vector search`
+              : `Semantic cache miss for statistical query, performing vector search`,
           );
           contextLogs = await this.logStoragePort.vectorSearch(
             embedding,
@@ -373,10 +485,17 @@ export class SearchService extends SearchUseCase {
         contextLogs: contextLogs.slice(0, 5),
       };
 
+      const synthesisHistory = isStandalone ? [] : history;
+
       const { answer, confidence } = await this.synthesisPort.synthesize(
         reformulatedQuery,
         [synthesisContext],
-        history,
+        synthesisHistory,
+        targetLanguage,
+      );
+
+      this.logger.log(
+        `Synthesized statistical answer (raw): "${answer.substring(0, 100)}${answer.length > 100 ? "..." : ""}" (confidence: ${confidence})`,
       );
 
       let finalAnswer = answer;

@@ -13,11 +13,13 @@ Your task is to rewrite ambiguous queries by resolving references (pronouns, "it
 {{query}}
 
 [Instructions]
+
 - If the query contains references (it, that, the error, 그, 그것, 그 에러, etc.), resolve them based on chat history
 - Replace pronouns and ambiguous terms with specific entities from the conversation
 - If the query is already clear and has no references, return it as-is
 - Return ONLY the reformulated query, no explanations or additional text
-- Maintain the original language (Korean for Korean queries, English for English queries)
+- CRITICAL: DO NOT TRANSLATE. Maintain the language of the [Current Query].
+- If the [Current Query] is in English, the [Reformulated Query] MUST be in English, even if the [Chat History] is in Korean.
+- If the [Current Query] is in Korean, the [Reformulated Query] MUST be in Korean, even if the [Chat History] is in English.
 
 [Reformulated Query]
-

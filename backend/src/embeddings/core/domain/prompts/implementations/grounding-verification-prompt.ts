@@ -1,6 +1,6 @@
 import { PromptTemplate } from "../prompt-template.vo";
 import { PromptTemplateRegistry } from "../prompt-template-registry";
-import { GROUNDING_VERIFICATION_FALLBACK } from "./fallbacks/grounding-verification.fallback";
+import { GROUNDING_VERIFICATION_FALLBACK } from "@embeddings/value-objects/fallbacks/prompts";
 
 /**
  * GroundingVerificationPrompt - Grounding verification prompt template
@@ -25,8 +25,7 @@ export class GroundingVerificationPrompt extends PromptTemplate {
     groundingContext: string;
   }): string {
     const template =
-      this.registry.getTemplateString(this.getType()) ||
-      this.fallbackTemplate;
+      this.registry.getTemplateString(this.getType()) || this.fallbackTemplate;
 
     return template
       .replace("{{query}}", params.query)
@@ -43,11 +42,7 @@ export class GroundingVerificationPrompt extends PromptTemplate {
     }
 
     return contexts
-      .map(
-        (ctx, i) =>
-          `[Log ${i + 1}]\n${JSON.stringify(ctx, null, 2)}`,
-      )
+      .map((ctx, i) => `[Log ${i + 1}]\n${JSON.stringify(ctx, null, 2)}`)
       .join("\n\n");
   }
 }
-

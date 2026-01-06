@@ -14,7 +14,7 @@ import { EmbeddingsModule } from "@embeddings";
       envFilePath: ".env",
       load: [pathConfig],
     }),
-    LoggingModule,
+    LoggingModule.forRoot(),
     ...(process.env.STORAGE_TYPE === "file" ? [] : [EmbeddingsModule]),
     PaymentsModule,
   ],

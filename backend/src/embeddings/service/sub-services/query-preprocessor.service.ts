@@ -39,21 +39,39 @@ export class QueryPreprocessorService {
       `Preprocessing query: "${query}" with metadata: ${JSON.stringify(metadata)}`,
     );
 
-    const outcome = this.determineOutcome(query, metadata);
-    // Normalize service name (singular -> plural)
-    const service = this.normalizeService(metadata.service) || "ANY";
-    const route = this.extractRoute(query, metadata) || "ANY";
-    const errorCode =
-      metadata.errorCode || (metadata.hasError ? "ANY" : "NONE");
-    const errorMessage = metadata.hasError ? "ANY" : "NONE";
-    const userRole = this.extractUserRole(query) || "ANY";
-    const latencyBucket = this.extractLatencyBucket(query) || "ANY";
+    const parts: string[] = [];
 
-    const structuredQuery = query
-      .trim()
-      .concat(
-        `\n\nOutcome: ${outcome}, Service: ${service}, Route: ${route}, Error: ${errorCode}, ErrorMessage: ${errorMessage}, UserRole: ${userRole}, LatencyBucket: ${latencyBucket}`,
-      );
+    const outcome = this.determineOutcome(query, metadata);
+    if (outcome !== "ANY") {
+      parts.push(`Outcome: ${outcome}`);
+    }
+
+    const service = this.normalizeService(metadata.service);
+    if (service) {
+      parts.push(`Service: ${service}`);
+    }
+
+    const route = this.extractRoute(query, metadata);
+    if (route) {
+      parts.push(`Route: ${route}`);
+    }
+
+    if (metadata.hasError || metadata.errorCode) {
+      parts.push(`Error: ${metadata.errorCode || "ANY"}`);
+      parts.push(`ErrorMessage: ANY`);
+    }
+
+    const userRole = this.extractUserRole(query);
+    if (userRole) {
+      parts.push(`UserRole: ${userRole}`);
+    }
+
+    const latencyBucket = this.extractLatencyBucket(query);
+    if (latencyBucket) {
+      parts.push(`LatencyBucket: ${latencyBucket}`);
+    }
+
+    const structuredQuery = query.trim().concat(`\n\n${parts.join(", ")}`);
     this.logger.debug(`Structured query: "${structuredQuery}"`);
     return structuredQuery;
   }
@@ -77,6 +95,11 @@ export class QueryPreprocessorService {
       OUTCOME_KEYWORDS.SUCCESS.some((keyword) => lowerQuery.includes(keyword))
     ) {
       return "SUCCESS";
+    }
+    if (
+      OUTCOME_KEYWORDS.WARNING.some((keyword) => lowerQuery.includes(keyword))
+    ) {
+      return "WARNING";
     }
     if (
       OUTCOME_KEYWORDS.EDGE_CASE.some((keyword) => lowerQuery.includes(keyword))
@@ -219,7 +242,7 @@ export class QueryPreprocessorService {
     }
 
     if (metadata.service) {
-      const serviceFocused = `Outcome: ANY, Service: ${metadata.service}, Route: ANY, Error: ANY, ErrorMessage: ANY, UserRole: ANY, LatencyBucket: ANY`;
+      const serviceFocused = `Service: ${metadata.service}`;
       variations.push(serviceFocused);
     }
 

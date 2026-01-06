@@ -175,7 +175,7 @@ db.createCollection("chat_history", {
       required: [
         "sessionId",
         "intent",
-        "source",
+        "sources",
         "question",
         "answer",
         "confidence",

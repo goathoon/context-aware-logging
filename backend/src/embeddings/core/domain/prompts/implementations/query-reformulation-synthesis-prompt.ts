@@ -1,7 +1,7 @@
 import { PromptTemplate } from "../prompt-template.vo";
 import { PromptTemplateRegistry } from "../prompt-template-registry";
 import { AnalysisResult } from "@embeddings/dtos";
-import { QUERY_REFORMULATION_SYNTHESIS_FALLBACK } from "./fallbacks";
+import { QUERY_REFORMULATION_SYNTHESIS_FALLBACK } from "src/embeddings/core/value-objects/fallbacks/prompts";
 /**
  * QueryReformulationSynthesisPrompt - Query reformulation prompt template
  *

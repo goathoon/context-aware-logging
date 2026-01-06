@@ -1,5 +1,6 @@
-import { Module, Global, Provider } from "@nestjs/common";
+import { Module, Global, Provider, DynamicModule } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import * as dotenv from "dotenv";
 import {
   LoggingService,
   ContextService,
@@ -19,63 +20,77 @@ import { MqProducerPort } from "@logging/out-ports";
 import { LoggingInterceptor } from "@logging/presentation";
 import { SamplingPolicy } from "@logging/domain";
 
+// Load environment variables immediately to support dynamic module registration
+dotenv.config();
+
 /**
  * LoggingModule - NestJS module for the logging library.
  *
- * This module is marked as @Global() so it can be imported once in AppModule
- * and used throughout the application without re-importing.
- *
- * Phase 5: MQ Integration
- * - If MQ_ENABLED=true, uses KafkaLogger (publishes to Kafka)
- * - Otherwise, uses MongoLogger directly (synchronous logging)
- * - MqConsumerService runs in background to consume and persist logs
+ * This module uses a dynamic module pattern with global: true
+ * to ensure it's initialized early and destroyed late in the NestJS lifecycle.
  */
+@Module({})
+export class LoggingModule {
+  /**
+   * Standard Dynamic Module for Logging.
+   * Uses process.env.STORAGE_TYPE to determine which infrastructure to load.
+   */
+  static forRoot(): DynamicModule {
+    const storageType = process.env.STORAGE_TYPE || "mongodb";
 
-const storageType = process.env.STORAGE_TYPE || "mongodb";
+    const providers: Provider[] = [
+      ContextService,
+      SamplingPolicy,
+      LoggingService,
+      LoggingInterceptor,
+    ];
 
-const providers: Provider[] = [
-  ContextService,
-  SamplingPolicy,
-  LoggingService,
-  LoggingInterceptor,
-];
+    const exports: any[] = [LoggingService, ContextService, LoggingInterceptor];
 
-if (storageType === "file") {
-  providers.push(FileLogger);
-  providers.push({
-    provide: LoggerPort,
-    useClass: FileLogger,
-  });
-} else if (storageType === "mongodb") {
-  providers.push(MongoConnectionClient, MongoLogger);
-  providers.push({
-    provide: LoggerPort,
-    useClass: MongoLogger,
-  });
-} else if (storageType === "kafka") {
-  providers.push(
-    MongoConnectionClient,
-    MongoLogger,
-    KafkaProducerClient,
-    KafkaConsumerClient,
-    KafkaProducer,
-    {
-      provide: MqProducerPort,
-      useClass: KafkaProducer,
-    },
-    {
-      provide: LoggerPort,
-      useFactory: (producer, mongo, config) =>
-        new KafkaLogger(producer, mongo, config),
-      inject: [MqProducerPort, MongoLogger, ConfigService],
-    },
-    MqConsumerService,
-  );
+    if (storageType === "file") {
+      console.log("########## File storage type is enabled ##########");
+      providers.push(FileLogger);
+      providers.push({
+        provide: LoggerPort,
+        useClass: FileLogger,
+      });
+      exports.push(LoggerPort);
+    } else if (storageType === "mongodb") {
+      console.log("########## MongoDB storage type is enabled ##########");
+      providers.push(MongoConnectionClient, MongoLogger);
+      providers.push({
+        provide: LoggerPort,
+        useClass: MongoLogger,
+      });
+      exports.push(LoggerPort);
+    } else if (storageType === "kafka") {
+      console.log("########## Kafka storage type is enabled ##########");
+      providers.push(
+        MongoConnectionClient,
+        MongoLogger,
+        KafkaProducerClient,
+        KafkaConsumerClient,
+        KafkaProducer,
+        {
+          provide: MqProducerPort,
+          useClass: KafkaProducer,
+        },
+        {
+          provide: LoggerPort,
+          useFactory: (producer, mongo, config) =>
+            new KafkaLogger(producer, mongo, config),
+          inject: [MqProducerPort, MongoLogger, ConfigService],
+        },
+        MqConsumerService,
+      );
+      exports.push(LoggerPort, MqProducerPort);
+    }
+
+    return {
+      global: true,
+      module: LoggingModule,
+      providers: providers,
+      exports: exports,
+    };
+  }
 }
-
-@Global()
-@Module({
-  providers: providers,
-  exports: [LoggingService, ContextService, LoggingInterceptor],
-})
-export class LoggingModule {}

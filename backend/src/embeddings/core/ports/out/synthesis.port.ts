@@ -14,6 +14,7 @@ export abstract class SynthesisPort {
     query: string,
     contexts: any[],
     history?: any[],
+    targetLanguage?: "Korean" | "English",
   ): Promise<{ answer: string; confidence: number }>;
 
   /**
@@ -70,4 +71,20 @@ export abstract class SynthesisPort {
     action: "KEEP_ANSWER" | "ADJUST_CONFIDENCE" | "REJECT_ANSWER";
     reasoning: string;
   }>;
+
+  /**
+   * Transforms a natural language query into a hypothetical log-style narrative.
+   * This implements a HyDE-like strategy to improve semantic matching with log summaries.
+   *
+   * @param query The original natural language query
+   * @returns A log-style narrative that hypothetical logs would have
+   */
+  abstract transformQueryToLogStyle(query: string): Promise<string>;
+
+  /**
+   * Detects the language of a text string.
+   * @param text The text to detect language for
+   * @returns "Korean" or "English"
+   */
+  abstract detectLanguage(text: string): "Korean" | "English";
 }
