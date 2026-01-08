@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 /**
  * Session Cache Persistence Test
  *

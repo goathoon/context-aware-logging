@@ -30,7 +30,7 @@ export class PaymentsController {
       amount: dto.amount,
     });
 
-    const result = await this.paymentsService.processPayment(dto);
+    const result = await this.paymentsService.procesqsPayment(dto);
 
     if (!result.success) {
       this.loggingService.addError({
